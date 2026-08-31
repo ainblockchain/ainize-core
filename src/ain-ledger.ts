@@ -30,6 +30,34 @@ const require = createRequire(import.meta.url);
 // ain-js is CommonJS with `exports.default`
 const AinCtor = (require('@ainblockchain/ain-js') as { default: any }).default;
 
+/** Genesis account of the 1-node local dev chain (blockchain-configs/1-node) — public test key, dev only. */
+export const LOCAL_GENESIS = {
+  address: '0x00ADEc28B6a845a085e03591bE7550dd68673C1C',
+  privateKey: 'b22c95ffc4a5c096f7d7d0487ba963ce6ac945bdc91c79b64ce209de289bec96',
+};
+
+/** Fund an address from the local dev chain's genesis account. Refuses non-local providers. */
+export async function fundFromGenesis(providerUrl: string, to: string, amount: number): Promise<{ tx_hash: string; balance: number }> {
+  const u = new URL(providerUrl);
+  if (!['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(u.hostname)) throw new Error('fundFromGenesis only works against a local dev chain');
+  const ain = new AinCtor(providerUrl, null, 0);
+  ain.wallet.addAndSetDefaultAccount(LOCAL_GENESIS.privateKey);
+  const res = await ain.wallet.transfer({ to, value: amount, nonce: -1 });
+  if (!res?.tx_hash) throw new Error(`transfer failed: ${JSON.stringify(res).slice(0, 200)}`);
+  await new Promise((r) => setTimeout(r, 1500));
+  return { tx_hash: res.tx_hash, balance: await ain.wallet.getBalance(to) };
+}
+
+/** Quick reachability probe for an AIN node. */
+export async function ainReachable(providerUrl: string, timeoutMs = 3000): Promise<boolean> {
+  try {
+    const r = await fetch(`${providerUrl.replace(/\/$/, '')}/node_status`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!r.ok) return false;
+    const j = (await r.json()) as { result?: { health?: boolean; state?: string } };
+    return !!j.result?.health && j.result?.state === 'SERVING';
+  } catch { return false; }
+}
+
 export interface AinLedgerOptions {
   providerUrl: string;
   eventHandlerUrl?: string | null;
@@ -42,7 +70,59 @@ const APP = '/apps/knowledge';
 const MARKET = `${APP}/market`;
 
 function keyOf(path: string): string {
-  return path.replace(/[^a-zA-Z0-9_.-]/g, '_');
+  return path.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+/**
+ * AIN state values cannot hold JS arrays (only objects/primitives) and empty objects are pruned.
+ * toAin(): arrays → {"0":…,"1":…}; empty arrays/objects → null (key omitted); undefined → omitted.
+ * fromAin(): objects whose keys are exactly 0..n-1 → arrays. Our record schemas never use such keys otherwise.
+ */
+export function toAin(v: unknown): unknown {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  if (Array.isArray(v)) {
+    if (!v.length) return null;
+    const o: Record<string, unknown> = {};
+    v.forEach((x, i) => { const y = toAin(x); if (y !== undefined) o[String(i)] = y; });
+    return Object.keys(o).length ? o : null;
+  }
+  if (typeof v === 'object') {
+    const o: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      const y = toAin(x);
+      if (y !== undefined && y !== null) o[k] = y;
+    }
+    return Object.keys(o).length ? o : null;
+  }
+  return v;
+}
+
+export function fromAin(v: unknown): unknown {
+  if (v === null || v === undefined) return v;
+  if (typeof v !== 'object') return v;
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o);
+  if (keys.length && keys.every((k, i) => k === String(i))) return keys.map((k) => fromAin(o[k]));
+  const out: Record<string, unknown> = {};
+  for (const k of keys) out[k] = fromAin(o[k]);
+  return out;
+}
+
+const ARRAY_FIELDS = ['parents', 'parent_authors', 'format', 'samples', 'addr_sketch', 'roles', 'branches', 'blobs', 'patch_ids'];
+/** Restore array fields that were omitted because they were empty. */
+function withEmptyArrays<T>(body: T): T {
+  if (!body || typeof body !== 'object') return body;
+  const b = body as Record<string, unknown>;
+  for (const f of ARRAY_FIELDS) if (f in b === false && (f !== 'samples' && f !== 'format')) { /* only top-level */ }
+  if (Array.isArray(b.parents) === false && 'author' in b && 'patch_sha256' in b) { b.parents = b.parents ?? []; b.parent_authors = b.parent_authors ?? []; }
+  if ('benchmark' in b && b.benchmark && typeof b.benchmark === 'object') { const bm = b.benchmark as Record<string, unknown>; bm.format = bm.format ?? []; bm.samples = bm.samples ?? []; }
+  if ('roles' in b || 'endpoint' in b) { b.roles = b.roles ?? []; b.branches = b.branches ?? []; b.blobs = b.blobs ?? []; }
+  if ('context' in b && 'owner' in b) { b.patch_ids = b.patch_ids ?? []; b.context = b.context ?? {}; }
+  if ('action' in b && 'branch' in b) { b.patch_ids = b.patch_ids ?? []; }
+  if ('royalty' in b) { b.royalty = b.royalty ?? {}; }
+  if ('score' in b) { b.score = b.score ?? {}; }
+  return body;
 }
 
 export class AinLedger implements Ledger {
@@ -89,7 +169,8 @@ export class AinLedger implements Ledger {
   }
 
   private async set(ref: string, value: unknown): Promise<string> {
-    const res = await this.ain.db.ref(ref).setValue({ value, ...this.tx() });
+    const encoded = toAin(value);
+    const res = await this.ain.db.ref(ref).setValue({ value: encoded, ...this.tx() });
     return AinLedger.assertOk(res, ref);
   }
 
@@ -103,7 +184,7 @@ export class AinLedger implements Ledger {
   }
 
   async getValue(ref: string): Promise<any> {
-    return this.ain.db.ref(ref).getValue();
+    return fromAin(await this.ain.db.ref(ref).getValue());
   }
 
   async balance(address = this.identity.address): Promise<number> {
@@ -128,23 +209,45 @@ export class AinLedger implements Ledger {
     return { from: m[1], to: m[2], key: m[3], value: Number(op.value) };
   }
 
+  /** Total AIN staked on the knowledge app (state/bandwidth budget is proportional to app stake). */
+  async appStake(): Promise<number> {
+    const v = await this.ain.db.ref('/staking/knowledge/balance_total').getValue();
+    return Number(v ?? 0);
+  }
+
+  /** Stake AIN on the knowledge app from this identity (apps on the free tier are capped at ~100 KB of state). */
+  async stakeApp(amount: number): Promise<string> {
+    const ref = `/staking/knowledge/${this.identity.address}/0/stake/${Date.now()}/value`;
+    const res = await this.ain.db.ref(ref).setValue({ value: amount, ...this.tx() });
+    return AinLedger.assertOk(res, 'stake knowledge app');
+  }
+
   /**
-   * One-time app setup (run by the first node = app admin): ain-js setupApp() + market rules.
-   * Idempotent: if the app exists and we are not admin, only checks readability.
+   * One-time app setup (run by the first node = app admin): ain-js setupApp() + market rules + app stake.
+   * Idempotent: if the app exists and we are not admin, only the stake top-up (if we can afford it) is attempted.
    */
-  async setupApp(): Promise<{ created: boolean; tx?: string; admin?: string }> {
+  async setupApp(opts: { stake?: number } = {}): Promise<{ created: boolean; tx?: string; admin?: string; staked?: number }> {
     const cfg = await this.ain.db.ref('/manage_app/knowledge/config').getValue();
+    let created = false; let tx: string | undefined; let admin: string | undefined;
     if (!cfg) {
       const res = await this.ain.knowledge.setupApp({ nonce: -1 });
-      const tx = AinLedger.assertOk(res, 'setupApp');
+      tx = AinLedger.assertOk(res, 'setupApp');
       await this.setMarketRules();
-      return { created: true, tx, admin: this.identity.address };
+      created = true; admin = this.identity.address;
+    } else {
+      admin = Object.keys(cfg.admin ?? {})[0];
+      if (cfg.admin?.[this.identity.address]) await this.setMarketRules().catch(() => undefined);
     }
-    const admin = Object.keys(cfg.admin ?? {})[0];
-    if (cfg.admin?.[this.identity.address]) {
-      await this.setMarketRules().catch(() => undefined);
-    }
-    return { created: false, admin };
+    let staked: number | undefined;
+    const want = opts.stake ?? 100;
+    try {
+      const current = await this.appStake();
+      if (current < want) {
+        const bal = await this.balance();
+        if (bal > want + 10) { await this.stakeApp(want); staked = want; }
+      }
+    } catch { /* staking is best effort */ }
+    return { created, tx, admin, staked };
   }
 
   private async setMarketRules(): Promise<void> {
@@ -172,9 +275,7 @@ export class AinLedger implements Ledger {
       case 'anchor': {
         const a = body as unknown as PatchAnchor;
         ref = `${MARKET}/patches/${a.id}`;
-        // 1) public metadata mirror (rule: author only)
-        txHash = await this.set(ref, a);
-        // 2) knowledge graph entry with lineage edges (parentEntry = first parent, others related)
+        // 1) knowledge graph entry with lineage edges (parentEntry = first parent, others related)
         const parentAnchors = await this.anchors();
         const findEntry = (pid: string) => parentAnchors.find((r) => r.body.id === pid)?.body as (PatchAnchor & { entry_id?: string }) | undefined;
         const parentEntry = a.parents[0] ? findEntry(a.parents[0]) : undefined;
@@ -193,11 +294,11 @@ export class AinLedger implements Ledger {
           parentEntry: parentEntry?.entry_id ? { ownerAddress: parentEntry.author, topicPath: parentEntry.topic_path, entryId: parentEntry.entry_id } : null,
           relatedEntries: related.filter((r) => r.entry_id).map((r) => ({ ownerAddress: r.author, topicPath: r.topic_path, entryId: r.entry_id!, type: 'related' as const })),
         }, { nonce: -1 });
-        // 3) remember entry id on the mirror so buyers can `knowledge.access()` it
-        await this.set(`${ref}/entry_id`, ex.entryId);
-        await this.set(`${ref}/node_id`, ex.nodeId);
+        AinLedger.assertOk(ex.txResult, 'knowledge.explore');
         (a as PatchAnchor & { entry_id?: string; node_id?: string }).entry_id = ex.entryId;
         (a as PatchAnchor & { entry_id?: string; node_id?: string }).node_id = ex.nodeId;
+        // 2) public metadata mirror (rule: author only, write-once) — includes the entry id so buyers can knowledge.access() it
+        txHash = await this.set(ref, a);
         break;
       }
       case 'attest': {
@@ -226,7 +327,8 @@ export class AinLedger implements Ledger {
       }
       case 'node': {
         ref = `${MARKET}/nodes/${this.identity.address}`;
-        txHash = await this.set(ref, body);
+        const info = body as unknown as PeerInfo;
+        txHash = await this.set(ref, { ...info, blobs: info.blobs.slice(0, 40) });
         break;
       }
       case 'supersede': {
@@ -255,10 +357,12 @@ export class AinLedger implements Ledger {
 
   /** Re-read the market subtree and rebuild the record cache. */
   async refresh(): Promise<void> {
-    const market = (await this.ain.db.ref(MARKET).getValue()) ?? {};
+    const market = (fromAin(await this.ain.db.ref(MARKET).getValue()) as any) ?? {};
     const recs: LedgerRecord[] = [];
-    const push = (kind: RecordKind, ref: string, body: any, author: string, ts: number) =>
+    const push = (kind: RecordKind, ref: string, rawBody: any, author: string, ts: number) => {
+      const body = withEmptyArrays(rawBody);
       recs.push({ hash: sha256Hex(`${ref}:${canonicalJson(body)}`), kind, body, author, ts, parents: [], sig: '' });
+    };
     for (const [id, a] of Object.entries<any>(market.patches ?? {})) push('anchor', `${MARKET}/patches/${id}`, a, a.author, a.created_at ?? 0);
     for (const [id, m] of Object.entries<any>(market.attestations ?? {}))
       for (const [v, at] of Object.entries<any>(m)) push('attest', `${MARKET}/attestations/${id}/${v}`, at, v, at.created_at ?? 0);
