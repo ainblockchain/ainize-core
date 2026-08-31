@@ -79,6 +79,8 @@ export interface PatchAnchor {
   addr_sketch?: number[];
   /** Deposit / bond for verification (청구항 19). */
   bond?: string;
+  /** 'test' anchors (e2e suites on a shared dev chain) are hidden from catalogs unless explicitly requested. */
+  visibility?: 'public' | 'test';
 }
 
 /** Generation recipe R = (corpus template, benchmark, hyper-params) — what is portable across models. */
@@ -264,4 +266,6 @@ export interface NodeConfig {
   };
   gossipIntervalMs: number;
   version: string;
+  /** Show anchors marked visibility:'test' (e2e suites) in this node's catalog. */
+  includeTestAnchors?: boolean;
 }

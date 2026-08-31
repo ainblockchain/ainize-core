@@ -8,7 +8,7 @@
  *               Public patch metadata mirrors to /apps/knowledge/market/patches/$id (author-only write rule).
  *  - attest   → /apps/knowledge/market/attestations/$id/$verifier   (rule: auth.addr === $verifier)
  *  - settle   → /apps/knowledge/market/settlements/$id/$tx           (rule: buyer or seller)
- *               + ain-js access receipt (/apps/knowledge/access/$buyer/…) written by the buyer.
+ *               + ain-js access receipt (/apps/knowledge/access/$buyer/…) written by the buyer after download (recordAccess).
  *  - challenge→ /apps/knowledge/market/challenges/$id/$challenger
  *  - branch   → /apps/knowledge/market/branches/$name                 (rule: owner)
  *  - node     → /apps/knowledge/market/nodes/$addr                    (rule: auth.addr === $addr)
@@ -363,9 +363,9 @@ export class AinLedger implements Ledger {
       const body = withEmptyArrays(rawBody);
       recs.push({ hash: sha256Hex(`${ref}:${canonicalJson(body)}`), kind, body, author, ts, parents: [], sig: '' });
     };
-    for (const [id, a] of Object.entries<any>(market.patches ?? {})) push('anchor', `${MARKET}/patches/${id}`, a, a.author, a.created_at ?? 0);
+    for (const [id, a] of Object.entries<any>(market.patches ?? {})) if (a && typeof a.patch_sha256 === 'string' && a.author) push('anchor', `${MARKET}/patches/${id}`, a, a.author, a.created_at ?? 0);
     for (const [id, m] of Object.entries<any>(market.attestations ?? {}))
-      for (const [v, at] of Object.entries<any>(m)) push('attest', `${MARKET}/attestations/${id}/${v}`, at, v, at.created_at ?? 0);
+      for (const [v, at] of Object.entries<any>(m)) if (at && at.patch_id === id && at.verifier === v && typeof at.passed === 'boolean') push('attest', `${MARKET}/attestations/${id}/${v}`, at, v, at.created_at ?? 0);
     for (const [id, m] of Object.entries<any>(market.settlements ?? {}))
       for (const [k, s] of Object.entries<any>(m)) push('settle', `${MARKET}/settlements/${id}/${k}`, s, s.seller, s.created_at ?? 0);
     for (const [id, m] of Object.entries<any>(market.challenges ?? {}))
@@ -415,6 +415,25 @@ export class AinLedger implements Ledger {
       if (!rule) errors.push('market rules not set (run `ngram chain setup`)');
     } catch (e) { errors.push(`chain unreachable: ${(e as Error).message}`); }
     return { valid: errors.length === 0, checked: this.cache.length, errors };
+  }
+
+  /**
+   * Buyer-side access receipt, exactly where ain-js `knowledge.access()` / `hasAccess()` look:
+   * /apps/knowledge/access/$buyer/{owner}_{topicKey}_{entryId} (write rule: auth.addr === $buyer).
+   */
+  async recordAccess(anchor: PatchAnchor & { entry_id?: string }, amount: string, currency: string, txHash: string): Promise<string | null> {
+    if (!anchor.entry_id) return null;
+    const topicKey = (anchor.topic_path || 'patches').replace(/\//g, '|');
+    const entryKey = `${anchor.author}_${topicKey}_${anchor.entry_id}`;
+    const receipt = { seller: anchor.author, topic_path: anchor.topic_path, entry_id: anchor.entry_id, amount, currency, tx_hash: txHash, accessed_at: Date.now() };
+    return this.set(`${APP}/access/${this.identity.address}/${entryKey}`, receipt);
+  }
+
+  /** Has `buyer` an on-chain access receipt for this patch (ain-js hasAccess semantics)? */
+  async hasAccess(buyer: string, anchor: PatchAnchor & { entry_id?: string }): Promise<boolean> {
+    if (!anchor.entry_id) return false;
+    const topicKey = (anchor.topic_path || 'patches').replace(/\//g, '|');
+    return this.ain.knowledge.hasAccess(buyer, `${anchor.author}_${topicKey}_${anchor.entry_id}`);
   }
 
   /** Knowledge-graph view (nodes/edges) straight from ain-js. */

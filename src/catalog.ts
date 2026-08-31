@@ -10,7 +10,10 @@ export interface CatalogEntry {
   anchor: PatchAnchor & { entry_id?: string; node_id?: string; gateway_url?: string };
   status: PatchStatus;
   attestations: Attestation[];
+  /** Attestations that actually executed the benchmark on a compatible runtime (count toward quorum). */
   passed: number;
+  /** Integrity-only (hash-only) attestations — shown, but never sufficient for LISTED when the patch declares benchmark samples. */
+  integrity_checks: number;
   quorum: number;
   quorum_ok: boolean;
   settlements: Settlement[];
@@ -39,14 +42,14 @@ export function deriveCatalog(
     if (seen.has(rec.body.id)) continue;   // first anchor wins (immutable)
     seen.add(rec.body.id);
     byId.set(rec.body.id, {
-      anchor: rec.body, status: 'ANNOUNCED', attestations: [], passed: 0, quorum, quorum_ok: false,
+      anchor: rec.body, status: 'ANNOUNCED', attestations: [], passed: 0, integrity_checks: 0, quorum, quorum_ok: false,
       settlements: [], downloads: 0, revenue: '0', challenges: [], superseded_by: [], supersedes: [], children: [],
       record_hash: rec.hash,
     });
   }
   for (const d of localDrafts) {
     if (!byId.has(d.id)) byId.set(d.id, {
-      anchor: d, status: 'DRAFT', attestations: [], passed: 0, quorum, quorum_ok: false,
+      anchor: d, status: 'DRAFT', attestations: [], passed: 0, integrity_checks: 0, quorum, quorum_ok: false,
       settlements: [], downloads: 0, revenue: '0', challenges: [], superseded_by: [], supersedes: [], children: [], record_hash: '',
     });
   }
@@ -78,16 +81,20 @@ export function deriveCatalog(
   }
   for (const e of byId.values()) {
     for (const p of e.anchor.parents) byId.get(p)?.children.push(e.anchor.id);
-    e.passed = e.attestations.filter((a) => a.passed).length;
+    // A patch that ships benchmark samples must be *executed* by verifiers; hash-only checks are recorded but do not list it.
+    const needsBenchmark = (e.anchor.benchmark.samples?.length ?? 0) > 0;
+    const executed = e.attestations.filter((a) => a.passed && (!needsBenchmark || a.verified_on !== 'hash-only'));
+    e.passed = executed.length;
+    e.integrity_checks = e.attestations.filter((a) => a.verified_on === 'hash-only').length;
     e.quorum_ok = e.passed >= quorum;
     e.downloads = e.settlements.length;
     e.revenue = e.settlements.reduce((s, x) => s + Number(x.amount || 0), 0).toFixed(6).replace(/\.?0+$/, '') || '0';
     if (e.status === 'DRAFT') continue;
-    const failed = e.attestations.filter((a) => !a.passed).length;
+    const failed = e.attestations.filter((a) => !a.passed && (!needsBenchmark || a.verified_on !== 'hash-only')).length;
     const latestChallenge = e.challenges.sort((a, b) => b.created_at - a.created_at)[0];
     if (e.quorum_ok) {
       e.status = 'LISTED';
-      e.listed_at = Math.max(...e.attestations.filter((a) => a.passed).map((a) => a.created_at));
+      e.listed_at = Math.max(...executed.map((a) => a.created_at));
       if (latestChallenge && latestChallenge.created_at > (e.listed_at ?? 0)) e.status = 'CHALLENGED';
       if (e.superseded_by.length) e.status = 'SUPERSEDED';
     } else if (failed >= quorum) {
