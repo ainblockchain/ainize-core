@@ -52,6 +52,32 @@ export interface ModelIdentity {
   row_dim?: number;
 }
 
+/**
+ * A data provider credited on an anchor (teach mode). The on-chain `author` is always the publishing node
+ * (AIN write rule `auth.addr === newData.author`); contributors are signed claims carried inside the anchor body.
+ */
+export interface Contributor {
+  /** Paid address. */
+  address: string;
+  /** Teaching key when different from `address` (payout wallet declared by the key holder). */
+  signer?: string;
+  /** Display name (≤ 40 chars; the operator may hide it in the UI). */
+  name?: string;
+  /** 0..1 fraction of the SELLER remainder after the lineage pool (carved sequentially, see royaltySplit). */
+  share: number;
+  role: 'data_provider';
+  /** 'signed' = `sig` proves the claim; 'declared' = payout wallet typed by the key holder (can only receive). */
+  proof: 'signed' | 'declared';
+  /** Signature by `signer ?? address` over hashCanonical({patch_sha256, benchmark_hash, address, share}). */
+  sig?: string;
+}
+
+/** Maximum number of contributors carried on one anchor (the knowledge app lives on the AIN free tier, ~100 KB state). */
+export const MAX_CONTRIBUTORS = 4;
+
+/** Where an anchor came from: registered by the operator (default when absent) or taught by a visitor. */
+export type PatchOrigin = 'operator' | 'teach';
+
 /** Public, on-ledger description of a patch (anchor body). */
 export interface PatchAnchor {
   id: string;
@@ -81,6 +107,10 @@ export interface PatchAnchor {
   bond?: string;
   /** 'test' anchors (e2e suites on a shared dev chain) are hidden from catalogs unless explicitly requested. */
   visibility?: 'public' | 'test';
+  /** Data providers credited (and paid) for this patch — ≤ MAX_CONTRIBUTORS entries; absent on operator-registered anchors. */
+  contributors?: Contributor[];
+  /** 'teach' for visitor-taught knowledge; absent/'operator' for knowledge registered by the node operator. */
+  origin?: PatchOrigin;
 }
 
 /** Generation recipe R = (corpus template, benchmark, hyper-params) — what is portable across models. */
@@ -88,6 +118,16 @@ export interface PatchRecipe {
   corpus_template?: string;
   hyperparams?: Record<string, unknown>;
   teacher_student?: boolean;
+  /** Teach mode: the trained `Q:/A:` renderings (kept OUT of the anchor body; recipe/blob only). */
+  sentences?: string[];
+  /** Teach mode: contrast sentences trained alongside so unrelated prompts stay unchanged. */
+  contrast?: string[];
+  /** Teach mode: held-out paraphrases used for the generalisation check. */
+  held_out?: string[];
+  /** Model the recipe was produced on (id_M), for local-run instructions. */
+  model_id?: string;
+  /** Teach mode probe result after training. */
+  probe?: { hits: number; total: number; heldout_hits?: number };
 }
 
 export interface Attestation {
@@ -264,8 +304,39 @@ export interface NodeConfig {
     royaltyShare: number;      // share of price distributed to lineage parents (0..1)
     initialCredit: string;     // local-credit wallet seed for new accounts
   };
+  /** Teach mode (visitor-taught knowledge). Absent in configs written before teach mode → `teachConfig()` fills the defaults. */
+  teach?: TeachConfig;
   gossipIntervalMs: number;
   version: string;
   /** Show anchors marked visibility:'test' (e2e suites) in this node's catalog. */
   includeTestAnchors?: boolean;
+}
+
+/** Teach-mode policy and trainer settings (`config.json` → `teach`; defaults in `DEFAULT_TEACH_CONFIG`). */
+export interface TeachConfig {
+  /** Master switch — every visitor teach route answers 403 `teaching_disabled` while false. */
+  enabled: boolean;
+  /** What happens when a visitor publishes: operator review (default), automatic announce, or never. */
+  publish: 'review' | 'auto' | 'never';
+  factsPerJob: number;
+  jobsPerKeyPerDay: number;
+  jobsPerIpPerDay: number;
+  queueMax: number;
+  /** Default `Contributor.share` frozen into the anchor at publish (fraction of the seller remainder after lineage). */
+  contributorShare: number;
+  /** Private READY drafts expire after this many days without save/publish. */
+  draftTtlDays: number;
+  /** 'gradient' runs train/teach.py in the trainer container; 'stub' copies a fixture npz (CI/e2e, no GPU). */
+  backend: 'gradient' | 'stub';
+  trainer: {
+    container: string;
+    script: string;
+    gpus: string;
+    maxSteps: number;
+    timeoutMs: number;
+    minFreeGpuMb: number;
+    idleStopMin: number;
+  };
+  /** Locality gate: fixed prompts whose greedy answers must stay identical for at least `minSame` of them. */
+  locality: { prompts: string[]; minSame: number };
 }

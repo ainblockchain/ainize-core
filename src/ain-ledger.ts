@@ -20,6 +20,7 @@
  */
 import { createRequire } from 'node:module';
 import { canonicalJson, sha256Hex } from './canonical.js';
+import { MAX_CONTRIBUTORS } from './types.js';
 import type { Ledger, LedgerEvents, LedgerInfo, RecordBody, SubscriptionRecord, SupersedeRecord } from './ledger.js';
 import type {
   Attestation, BranchInfo, Challenge, LedgerRecord, PatchAnchor, PeerInfo, RecordKind, Settlement,
@@ -109,13 +110,18 @@ export function fromAin(v: unknown): unknown {
   return out;
 }
 
-const ARRAY_FIELDS = ['parents', 'parent_authors', 'format', 'samples', 'addr_sketch', 'roles', 'branches', 'blobs', 'patch_ids'];
-/** Restore array fields that were omitted because they were empty. */
-function withEmptyArrays<T>(body: T): T {
+/**
+ * Restore array fields that `toAin()` dropped because they were empty. Every record kind is handled with an explicit
+ * per-field line below (a generic field list cannot tell an anchor's `parents` from a branch's `patch_ids`).
+ */
+export function withEmptyArrays<T>(body: T): T {
   if (!body || typeof body !== 'object') return body;
   const b = body as Record<string, unknown>;
-  for (const f of ARRAY_FIELDS) if (f in b === false && (f !== 'samples' && f !== 'format')) { /* only top-level */ }
-  if (Array.isArray(b.parents) === false && 'author' in b && 'patch_sha256' in b) { b.parents = b.parents ?? []; b.parent_authors = b.parent_authors ?? []; }
+  if ('author' in b && 'patch_sha256' in b) {
+    // anchor
+    b.parents = b.parents ?? []; b.parent_authors = b.parent_authors ?? [];
+    b.contributors = Array.isArray(b.contributors) ? b.contributors.slice(0, MAX_CONTRIBUTORS) : [];
+  }
   if ('benchmark' in b && b.benchmark && typeof b.benchmark === 'object') { const bm = b.benchmark as Record<string, unknown>; bm.format = bm.format ?? []; bm.samples = bm.samples ?? []; }
   if ('roles' in b || 'endpoint' in b) { b.roles = b.roles ?? []; b.branches = b.branches ?? []; b.blobs = b.blobs ?? []; }
   if ('context' in b && 'owner' in b) { b.patch_ids = b.patch_ids ?? []; b.context = b.context ?? {}; }
@@ -275,6 +281,7 @@ export class AinLedger implements Ledger {
       case 'anchor': {
         const a = body as unknown as PatchAnchor;
         ref = `${MARKET}/patches/${a.id}`;
+        if ((a.contributors?.length ?? 0) > MAX_CONTRIBUTORS) throw new Error(`anchor carries more than ${MAX_CONTRIBUTORS} contributors`);
         // 1) knowledge graph entry with lineage edges (parentEntry = first parent, others related)
         const parentAnchors = await this.anchors();
         const findEntry = (pid: string) => parentAnchors.find((r) => r.body.id === pid)?.body as (PatchAnchor & { entry_id?: string }) | undefined;

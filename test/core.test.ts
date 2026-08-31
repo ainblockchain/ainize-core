@@ -5,9 +5,13 @@ import { dirname, join } from 'node:path';
 import { pythonJson, canonicalJson, sha256Hex } from '../src/canonical.js';
 import { createIdentity, signMessage, verifyMessage, hashPassword, verifyPassword } from '../src/identity.js';
 import { LocalLedger } from '../src/local-ledger.js';
-import { deriveCatalog, royaltySplit } from '../src/catalog.js';
+import { deriveCatalog, royaltySplit, validateContributors } from '../src/catalog.js';
+import { toAin, fromAin, withEmptyArrays } from '../src/ain-ledger.js';
+import { DEFAULT_TEACH_CONFIG, defaultConfig, loadConfig, saveConfig, teachConfig } from '../src/config.js';
 import { addressSet, intersectionCount, addressSketch, sketchJaccard } from '../src/npz.js';
-import type { PatchAnchor, Attestation, LedgerRecord } from '../src/types.js';
+import type { PatchAnchor, Attestation, Contributor, LedgerRecord } from '../src/types.js';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -90,4 +94,103 @@ test('address set intersection and sketch', () => {
   assert.equal(intersectionCount(a, b), 2);
   const sa = addressSketch(a, 8), sb = addressSketch(b, 8);
   assert.ok(sketchJaccard(sa, sb) > 0);
+});
+
+// ---------------------------------------------------------------- teach mode: contributors + royalty (spec §7.1–7.4)
+const TEACHER = '0x' + 'a'.repeat(40);
+const TEACHER2 = '0x' + 'b'.repeat(40);
+const mkEntry = (id: string, parents: string[], author: string, contributors?: Contributor[]) => ({
+  anchor: { id, name: id, description: '', author, model: { id_M: 'M' }, patch_sha256: id, size_bytes: 1, rows: 1,
+    benchmark: { schema: 's', queries: 1, format: [] }, benchmark_hash: 'h', price: '10', currency: 'CREDIT' as const, billing: 'per_download' as const,
+    parents, parent_authors: [], topic_path: 't', created_at: 1, contributors } as PatchAnchor,
+  status: 'LISTED' as const, attestations: [], passed: 2, integrity_checks: 0, quorum: 2, quorum_ok: true, settlements: [], downloads: 0, revenue: '0',
+  challenges: [], superseded_by: [], supersedes: [], children: [], record_hash: '',
+});
+const teacher = (address: string, share: number): Contributor => ({ address, share, role: 'data_provider', proof: 'signed', sig: 'x' });
+
+test('royaltySplit pass 2: no parents → {teacher: 7, node: 3} (price 10, contributor 0.7)', () => {
+  const lesson = mkEntry('lesson', [], 'node', [teacher(TEACHER, 0.7)]);
+  const m = new Map([['lesson', lesson]]);
+  assert.deepEqual(royaltySplit(lesson, m, 10, 0.3), { [TEACHER]: '7', node: '3' });
+});
+
+test('royaltySplit pass 1 + 2: one foreign parent → {parent-node: 3, teacher: 4.9, node: 2.1}', () => {
+  const parent = mkEntry('parent', [], 'parent-node');
+  const lesson = mkEntry('lesson', ['parent'], 'node', [teacher(TEACHER, 0.7)]);
+  const m = new Map([['parent', parent], ['lesson', lesson]]);
+  assert.deepEqual(royaltySplit(lesson, m, 10, 0.3), { 'parent-node': '3', [TEACHER]: '4.9', node: '2.1' });
+});
+
+test('royaltySplit pass 1b: a taught ancestor shares its lineage slice with its data provider (claim 21)', () => {
+  const taught = mkEntry('taught', [], 'parent-node', [teacher(TEACHER, 0.7)]);
+  const child = mkEntry('child', ['taught'], 'node');
+  const m = new Map([['taught', taught], ['child', child]]);
+  // pool 3 → taught slice 3 → teacher 2.1, parent-node 0.9; seller keeps 7
+  assert.deepEqual(royaltySplit(child, m, 10, 0.3), { [TEACHER]: '2.1', 'parent-node': '0.9', node: '7' });
+});
+
+test('royaltySplit: contributor equal to the seller is skipped, share 0 yields no payout line, several contributors carve sequentially', () => {
+  const selfTaught = mkEntry('self', [], 'node', [teacher('node', 0.7)]);
+  assert.deepEqual(royaltySplit(selfTaught, new Map([['self', selfTaught]]), 10, 0.3), { node: '10' });
+  const credited = mkEntry('credit', [], 'node', [teacher(TEACHER, 0)]);
+  assert.deepEqual(royaltySplit(credited, new Map([['credit', credited]]), 10, 0.3), { node: '10' });
+  const two = mkEntry('two', [], 'node', [teacher(TEACHER, 0.5), teacher(TEACHER2, 0.5)]);
+  // 10 → teacher 5, remainder 5 → teacher2 2.5, node 2.5
+  assert.deepEqual(royaltySplit(two, new Map([['two', two]]), 10, 0.3), { [TEACHER]: '5', [TEACHER2]: '2.5', node: '2.5' });
+});
+
+test('royaltySplit: the pre-teach behaviour is unchanged for anchors without contributors', () => {
+  const a = mkEntry('a', [], 'A'), b = mkEntry('b', ['a'], 'B'), c = mkEntry('c', ['b'], 'C');
+  const m = new Map([['a', a], ['b', b], ['c', c]]);
+  assert.deepEqual(royaltySplit(c, m, 10, 0.3), { A: '1.5', B: '1.5', C: '7' });
+  assert.deepEqual(royaltySplit(a, m, 10, 0.3), { A: '10' });
+});
+
+test('validateContributors: Σ share > 1, more than 4 entries, duplicates and bad addresses are rejected', () => {
+  assert.throws(() => validateContributors([teacher(TEACHER, 0.6), teacher(TEACHER2, 0.5)]), /more than 1/);
+  assert.throws(() => validateContributors(Array.from({ length: 5 }, (_, i) => teacher('0x' + String(i).repeat(40), 0.1))), /at most 4/);
+  assert.throws(() => validateContributors([teacher(TEACHER, 0.1), teacher(TEACHER.toUpperCase().replace('0X', '0x'), 0.1)]), /duplicate/);
+  assert.throws(() => validateContributors([teacher('teacher', 0.1)]), /address/);
+  assert.throws(() => validateContributors([{ ...teacher(TEACHER, 0.1), share: 1.5 }]), /share/);
+  assert.throws(() => validateContributors([{ ...teacher(TEACHER, 0.1), name: 'x'.repeat(41) }]), /name/);
+  assert.deepEqual(validateContributors(undefined), []);
+  const ok = validateContributors([{ address: TEACHER, share: 0.7, name: ' Kim ', signer: TEACHER2 }]);
+  assert.deepEqual(ok, [{ address: TEACHER, share: 0.7, role: 'data_provider', proof: 'declared', name: 'Kim', signer: TEACHER2 }]);
+});
+
+test('ain-ledger round-trip: contributors [] and a 1-entry array survive toAin/fromAin/withEmptyArrays', () => {
+  const base = { id: 'p', author: 'node', patch_sha256: 'sha', parents: [] as string[], parent_authors: [] as string[], benchmark: { schema: 's', queries: 1, format: [] as string[] }, price: '1' };
+  const empty = withEmptyArrays(fromAin(JSON.parse(JSON.stringify(toAin({ ...base, contributors: [] })))) as PatchAnchor);
+  assert.deepEqual(empty.contributors, []);
+  assert.deepEqual(empty.parents, []);
+  const legacy = withEmptyArrays(fromAin(JSON.parse(JSON.stringify(toAin(base)))) as PatchAnchor);
+  assert.deepEqual(legacy.contributors, [], 'anchors written before teach mode read as an empty list, never undefined');
+  const one = withEmptyArrays(fromAin(JSON.parse(JSON.stringify(toAin({ ...base, contributors: [teacher(TEACHER, 0.7)] })))) as PatchAnchor);
+  assert.deepEqual(one.contributors, [teacher(TEACHER, 0.7)]);
+  assert.equal(typeof one.contributors![0].share, 'number');
+  const five = withEmptyArrays({ ...base, contributors: Array.from({ length: 5 }, (_, i) => teacher('0x' + String(i).repeat(40), 0.1)) } as PatchAnchor);
+  assert.equal(five.contributors!.length, 4, 'capped at 4 on read');
+});
+
+test('config: teach defaults (disabled, review, gradient) and loadConfig fills a pre-teach config.json', () => {
+  const cfg = defaultConfig({ home: join(tmpdir(), 'x') });
+  assert.equal(cfg.teach!.enabled, false);
+  assert.equal(cfg.teach!.publish, 'review');
+  assert.equal(cfg.teach!.backend, 'gradient');
+  assert.equal(cfg.teach!.contributorShare, 0.7);
+  assert.equal(cfg.market.royaltyShare, 0.3);
+  assert.equal(cfg.teach!.locality.prompts.length, 12);
+  const home = mkdtempSync(join(tmpdir(), 'ngram-cfg-'));
+  try {
+    const { teach: _t, ...old } = cfg;
+    saveConfig({ ...old, dataDir: join(home, 'data') } as typeof cfg, home);
+    const loaded = loadConfig(home)!;
+    assert.deepEqual(loaded.teach, DEFAULT_TEACH_CONFIG);
+    const partial = teachConfig({ teach: { enabled: true, backend: 'stub', trainer: { gpus: '0' } } as never });
+    assert.equal(partial.enabled, true);
+    assert.equal(partial.backend, 'stub');
+    assert.equal(partial.trainer.gpus, '0');
+    assert.equal(partial.trainer.container, 'flashtrain');
+    assert.equal(partial.publish, 'review');
+  } finally { rmSync(home, { recursive: true, force: true }); }
 });
