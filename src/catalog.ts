@@ -53,7 +53,12 @@ export function deriveCatalog(
   for (const rec of attestations) {
     const e = byId.get(rec.body.patch_id);
     if (!e) continue;
-    if (e.attestations.some((a) => a.verifier === rec.body.verifier)) continue;
+    const idx = e.attestations.findIndex((a) => a.verifier === rec.body.verifier);
+    if (idx >= 0) {
+      // same verifier again: keep the stronger evidence (real benchmark beats hash-only), otherwise the first one
+      if (e.attestations[idx].verified_on === 'hash-only' && rec.body.verified_on !== 'hash-only') e.attestations[idx] = rec.body;
+      continue;
+    }
     e.attestations.push(rec.body);
   }
   for (const rec of settlements) {
