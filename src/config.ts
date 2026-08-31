@@ -56,6 +56,7 @@ export const DEFAULT_TEACH_CONFIG: TeachConfig = {
   contributorShare: 0.7,
   draftTtlDays: 7,
   backend: 'gradient',
+  stubOffline: false,
   trainer: { container: 'flashtrain', script: 'train/teach.py', gpus: '4,5,6', maxSteps: 20, timeoutMs: 1_800_000, minFreeGpuMb: 20_000, idleStopMin: 30 },
   locality: { prompts: DEFAULT_LOCALITY_PROMPTS, minSame: 11 },
 };
@@ -141,5 +142,6 @@ export function applyEnv(cfg: NodeConfig, env = process.env): NodeConfig {
   if (env.NGRAM_RUNTIME_API) cfg.runtime = { ...cfg.runtime, api: env.NGRAM_RUNTIME_API };
   if (env.NGRAM_TEACH_BACKEND === 'stub' || env.NGRAM_TEACH_BACKEND === 'gradient') cfg.teach = { ...teachConfig(cfg), backend: env.NGRAM_TEACH_BACKEND };
   if (env.NGRAM_TEACH_ENABLED === '1' || env.NGRAM_TEACH_ENABLED === '0') cfg.teach = { ...teachConfig(cfg), enabled: env.NGRAM_TEACH_ENABLED === '1' };
+  if (env.NGRAM_TEACH_STUB_OFFLINE === '1' || env.NGRAM_TEACH_STUB_OFFLINE === '0') cfg.teach = { ...teachConfig(cfg), stubOffline: env.NGRAM_TEACH_STUB_OFFLINE === '1' };
   return cfg;
 }

@@ -328,6 +328,12 @@ export interface TeachConfig {
   draftTtlDays: number;
   /** 'gradient' runs train/teach.py in the trainer container; 'stub' copies a fixture npz (CI/e2e, no GPU). */
   backend: 'gradient' | 'stub';
+  /**
+   * With `backend: 'stub'`: never touch the serving model — preflight answers and CHECKING are simulated
+   * (a prompt that already contains the answer counts as "already known"; `LOCALITY_FAIL` in a fact fails the locality gate).
+   * For CI / e2e nodes without a model server. Ignored for the gradient backend.
+   */
+  stubOffline?: boolean;
   trainer: {
     container: string;
     script: string;
