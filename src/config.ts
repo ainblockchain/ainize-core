@@ -107,6 +107,7 @@ export function defaultConfig(opts: InitOptions = {}): NodeConfig {
       initialCredit: '100',
     },
     teach: structuredClone(DEFAULT_TEACH_CONFIG),
+    server: { trustProxy: false },
     gossipIntervalMs: 4000,
     version: VERSION,
   };
@@ -142,6 +143,16 @@ export function applyEnv(cfg: NodeConfig, env = process.env): NodeConfig {
   if (env.NGRAM_RUNTIME_API) cfg.runtime = { ...cfg.runtime, api: env.NGRAM_RUNTIME_API };
   if (env.NGRAM_TEACH_BACKEND === 'stub' || env.NGRAM_TEACH_BACKEND === 'gradient') cfg.teach = { ...teachConfig(cfg), backend: env.NGRAM_TEACH_BACKEND };
   if (env.NGRAM_TEACH_ENABLED === '1' || env.NGRAM_TEACH_ENABLED === '0') cfg.teach = { ...teachConfig(cfg), enabled: env.NGRAM_TEACH_ENABLED === '1' };
+  if (env.NGRAM_TRUST_PROXY !== undefined) cfg.server = { ...(cfg.server ?? {}), trustProxy: parseTrustProxy(env.NGRAM_TRUST_PROXY) };
   if (env.NGRAM_TEACH_STUB_OFFLINE === '1' || env.NGRAM_TEACH_STUB_OFFLINE === '0') cfg.teach = { ...teachConfig(cfg), stubOffline: env.NGRAM_TEACH_STUB_OFFLINE === '1' };
   return cfg;
+}
+
+/** `NGRAM_TRUST_PROXY`: `0|false` → off, `1|2|…` → hop count, `true` → every proxy (only behind a proxy that overwrites X-Forwarded-For), anything else → Express IP/CIDR/`loopback` list. */
+export function parseTrustProxy(v: string): boolean | number | string {
+  const s = v.trim();
+  if (s === '' || s === '0' || s.toLowerCase() === 'false') return false;
+  if (s.toLowerCase() === 'true') return true;
+  if (/^\d+$/.test(s)) return Number(s);
+  return s;
 }

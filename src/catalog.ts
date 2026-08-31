@@ -109,33 +109,43 @@ export function deriveCatalog(
   return [...byId.values()].sort((a, b) => b.anchor.created_at - a.anchor.created_at);
 }
 
+/** A caller-supplied value was malformed (HTTP layers map it to 400 instead of 500). */
+export class ValidationError extends Error { constructor(message: string) { super(message); this.name = 'ValidationError'; } }
+
+/** Anchor price: a non-negative decimal string (`'0'`, `'0.1'`, `'25'`); negative or non-numeric prices would produce negative royalties. */
+export const PRICE_RE = /^\d+(\.\d+)?$/;
+export function validatePrice(price: unknown, label = 'price'): string {
+  if (typeof price !== 'string' || !PRICE_RE.test(price.trim())) throw new ValidationError(`${label} must be a non-negative number (e.g. "0", "0.1", "25")`);
+  return price.trim();
+}
+
 /**
  * Validate an anchor's contributor list (createDraft / updateDraft / publish). Returns a normalised copy.
  * Rules: ≤ MAX_CONTRIBUTORS entries, unique addresses, 0 ≤ share ≤ 1 each and Σ share ≤ 1, role 'data_provider',
- * proof 'signed' | 'declared', name ≤ 40 chars. Throws Error(<message>) on the first violation.
+ * proof 'signed' | 'declared', name ≤ 40 chars. Throws ValidationError(<message>) on the first violation.
  */
 export function validateContributors(list: unknown): Contributor[] {
   if (list === undefined || list === null) return [];
-  if (!Array.isArray(list)) throw new Error('contributors must be an array');
-  if (list.length > MAX_CONTRIBUTORS) throw new Error(`at most ${MAX_CONTRIBUTORS} contributors per patch`);
+  if (!Array.isArray(list)) throw new ValidationError('contributors must be an array');
+  if (list.length > MAX_CONTRIBUTORS) throw new ValidationError(`at most ${MAX_CONTRIBUTORS} contributors per patch`);
   const out: Contributor[] = [];
   const seen = new Set<string>();
   let sum = 0;
   for (const raw of list) {
     const c = raw as Partial<Contributor> | null;
-    if (!c || typeof c !== 'object') throw new Error('contributor must be an object');
-    if (typeof c.address !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(c.address)) throw new Error('contributor.address must be an AIN address (0x + 40 hex)');
+    if (!c || typeof c !== 'object') throw new ValidationError('contributor must be an object');
+    if (typeof c.address !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(c.address)) throw new ValidationError('contributor.address must be an AIN address (0x + 40 hex)');
     const address = c.address.toLowerCase();
-    if (seen.has(address)) throw new Error(`duplicate contributor address: ${c.address}`);
+    if (seen.has(address)) throw new ValidationError(`duplicate contributor address: ${c.address}`);
     seen.add(address);
-    if (typeof c.share !== 'number' || !Number.isFinite(c.share) || c.share < 0 || c.share > 1) throw new Error('contributor.share must be a number between 0 and 1');
+    if (typeof c.share !== 'number' || !Number.isFinite(c.share) || c.share < 0 || c.share > 1) throw new ValidationError('contributor.share must be a number between 0 and 1');
     sum += c.share;
-    if (sum > 1 + 1e-9) throw new Error('contributor shares add up to more than 1');
-    if (c.role !== undefined && c.role !== 'data_provider') throw new Error(`unsupported contributor role: ${String(c.role)}`);
-    if (c.proof !== undefined && c.proof !== 'signed' && c.proof !== 'declared') throw new Error(`unsupported contributor proof: ${String(c.proof)}`);
-    if (c.name !== undefined && (typeof c.name !== 'string' || c.name.length > 40)) throw new Error('contributor.name must be a string of at most 40 chars');
-    if (c.signer !== undefined && (typeof c.signer !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(c.signer))) throw new Error('contributor.signer must be an AIN address');
-    if (c.sig !== undefined && typeof c.sig !== 'string') throw new Error('contributor.sig must be a string');
+    if (sum > 1 + 1e-9) throw new ValidationError('contributor shares add up to more than 1');
+    if (c.role !== undefined && c.role !== 'data_provider') throw new ValidationError(`unsupported contributor role: ${String(c.role)}`);
+    if (c.proof !== undefined && c.proof !== 'signed' && c.proof !== 'declared') throw new ValidationError(`unsupported contributor proof: ${String(c.proof)}`);
+    if (c.name !== undefined && (typeof c.name !== 'string' || c.name.length > 40)) throw new ValidationError('contributor.name must be a string of at most 40 chars');
+    if (c.signer !== undefined && (typeof c.signer !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(c.signer))) throw new ValidationError('contributor.signer must be an AIN address');
+    if (c.sig !== undefined && typeof c.sig !== 'string') throw new ValidationError('contributor.sig must be a string');
     const entry: Contributor = { address: c.address, share: c.share, role: 'data_provider', proof: c.proof ?? (c.sig ? 'signed' : 'declared') };
     if (c.signer) entry.signer = c.signer;
     if (c.name) entry.name = c.name.trim();
@@ -143,6 +153,15 @@ export function validateContributors(list: unknown): Contributor[] {
     out.push(entry);
   }
   return out;
+}
+
+/**
+ * Non-throwing variant for anchors we did not write (peer gossip, chain reads): a malformed contributor list is treated as
+ * "no contributors" so a hostile peer anchor (share 5, 40 entries, junk addresses) can never inflate a payout here.
+ */
+export function sanitizeContributors(list: unknown): Contributor[] | undefined {
+  if (list === undefined || list === null) return undefined;
+  try { const out = validateContributors(list); return out.length ? out : undefined; } catch { return undefined; }
 }
 
 /**
@@ -162,6 +181,10 @@ export function royaltySplit(
   entry: CatalogEntry, all: Map<string, CatalogEntry>, amount: number, share: number,
 ): Record<string, string> {
   const seller = entry.anchor.author;
+  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  // Defensive: shares outside [0, 1] (unvalidated peer / chain anchors) are clamped and the total carve of one anchor can
+  // never exceed the slice it is carved from, so Σ payouts ≤ amount holds whatever the lineage carries.
+  const safeShare = (c: Contributor) => (typeof c.share === 'number' && Number.isFinite(c.share) ? Math.min(1, Math.max(0, c.share)) : 0);
   const ancestors: string[] = [];                       // unique ancestor authors, first-seen order
   const anchorsByAuthor = new Map<string, CatalogEntry[]>();
   const visited = new Set<string>();
@@ -194,9 +217,9 @@ export function royaltySplit(
     const sub = anchors.length ? each / anchors.length : each;
     for (const pe of anchors) {
       let rem = sub;
-      for (const c of pe.anchor.contributors ?? []) {
-        if (c.address === a) continue;               // folds back into the author anyway
-        const carve = sub * c.share;
+      for (const c of Array.isArray(pe.anchor.contributors) ? pe.anchor.contributors : []) {
+        if (!c || typeof c.address !== 'string' || same(c.address, a)) continue;   // folds back into the author anyway
+        const carve = Math.min(rem, sub * safeShare(c));
         add(c.address, carve);
         rem -= carve;
       }
@@ -207,9 +230,9 @@ export function royaltySplit(
 
   // pass 2
   let remainder = amount - pool;
-  for (const c of entry.anchor.contributors ?? []) {
-    if (c.address === seller) continue;
-    const carve = remainder * c.share;
+  for (const c of Array.isArray(entry.anchor.contributors) ? entry.anchor.contributors : []) {
+    if (!c || typeof c.address !== 'string' || same(c.address, seller)) continue;
+    const carve = Math.min(remainder, remainder * safeShare(c));
     add(c.address, carve);
     remainder -= carve;
   }

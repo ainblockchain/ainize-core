@@ -304,6 +304,12 @@ export interface NodeConfig {
     royaltyShare: number;      // share of price distributed to lineage parents (0..1)
     initialCredit: string;     // local-credit wallet seed for new accounts
   };
+  /**
+   * HTTP server knobs. `trustProxy` is Express's `trust proxy` setting: `false` (default) → `req.ip` is the TCP peer, so a
+   * client cannot pick its own address with X-Forwarded-For (per-IP quotas, bans and rate limits key on `req.ip`).
+   * Behind a reverse proxy set it to the hop count (`1`), `'loopback'`, or the proxy's IP/CIDR list.
+   */
+  server?: { trustProxy?: boolean | number | string | string[] };
   /** Teach mode (visitor-taught knowledge). Absent in configs written before teach mode → `teachConfig()` fills the defaults. */
   teach?: TeachConfig;
   gossipIntervalMs: number;

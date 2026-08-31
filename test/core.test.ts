@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { pythonJson, canonicalJson, sha256Hex } from '../src/canonical.js';
 import { createIdentity, signMessage, verifyMessage, hashPassword, verifyPassword } from '../src/identity.js';
 import { LocalLedger } from '../src/local-ledger.js';
-import { deriveCatalog, royaltySplit, validateContributors } from '../src/catalog.js';
+import { deriveCatalog, royaltySplit, sanitizeContributors, validateContributors, validatePrice, ValidationError } from '../src/catalog.js';
 import { toAin, fromAin, withEmptyArrays } from '../src/ain-ledger.js';
 import { DEFAULT_TEACH_CONFIG, defaultConfig, loadConfig, saveConfig, teachConfig } from '../src/config.js';
 import { addressSet, intersectionCount, addressSketch, sketchJaccard } from '../src/npz.js';
@@ -137,6 +137,35 @@ test('royaltySplit: contributor equal to the seller is skipped, share 0 yields n
   const two = mkEntry('two', [], 'node', [teacher(TEACHER, 0.5), teacher(TEACHER2, 0.5)]);
   // 10 → teacher 5, remainder 5 → teacher2 2.5, node 2.5
   assert.deepEqual(royaltySplit(two, new Map([['two', two]]), 10, 0.3), { [TEACHER]: '5', [TEACHER2]: '2.5', node: '2.5' });
+});
+
+test('royaltySplit: the seller-as-contributor skip is case-insensitive in both passes (spec §7.3)', () => {
+  const SELLER = '0xAbCdEf0000000000000000000000000000000001';
+  const selfLower = mkEntry('self', [], SELLER, [teacher(SELLER.toLowerCase(), 0.7)]);
+  assert.deepEqual(royaltySplit(selfLower, new Map([['self', selfLower]]), 10, 0.3), { [SELLER]: '10' }, 'pass 2: no split of the seller into two keys');
+  const taught = mkEntry('taught', [], 'parent-node', [teacher('PARENT-NODE', 0.7)]);
+  const child = mkEntry('child', ['taught'], 'node');
+  assert.deepEqual(royaltySplit(child, new Map([['taught', taught], ['child', child]]), 10, 0.3), { 'parent-node': '3', node: '7' }, 'pass 1b: author-as-contributor folds back');
+});
+
+test('royaltySplit never pays out more than the sale: unvalidated peer anchors with share > 1 / junk entries are clamped (payout integrity)', () => {
+  const EVIL = '0xEeEe000000000000000000000000000000000001';
+  const foreign = mkEntry('foreign', [], 'other-node', [{ address: EVIL, share: 5, role: 'data_provider', proof: 'declared' }]);
+  const mine = mkEntry('mine', ['foreign'], 'node');
+  const m = new Map([['foreign', foreign], ['mine', mine]]);
+  const split = royaltySplit(mine, m, 10, 0.3);
+  const total = Object.values(split).reduce((a, b) => a + Number(b), 0);
+  assert.equal(total, 10); assert.equal(split[EVIL], '3'); assert.equal(split.node, '7');
+  // pass 2 with a hostile share on the sold anchor itself, plus a junk entry
+  const sold = mkEntry('sold', [], 'node', [{ address: EVIL, share: 7, role: 'data_provider', proof: 'declared' }, { address: 12 as unknown as string, share: 0.5 } as unknown as Contributor]);
+  const s2 = royaltySplit(sold, new Map([['sold', sold]]), 10, 0.3);
+  assert.deepEqual(s2, { [EVIL]: '10', node: '0' });
+  assert.deepEqual(sanitizeContributors([{ address: EVIL, share: 5 }]), undefined, 'malformed list → treated as no contributors');
+  assert.deepEqual(sanitizeContributors(undefined), undefined);
+  assert.equal(sanitizeContributors([{ address: EVIL, share: 0.2 }])!.length, 1);
+  assert.throws(() => validateContributors([{ address: EVIL, share: 2 }]), ValidationError);
+  assert.equal(validatePrice('0.1'), '0.1'); assert.equal(validatePrice('25'), '25');
+  assert.throws(() => validatePrice('-5'), ValidationError); assert.throws(() => validatePrice('abc'), ValidationError); assert.throws(() => validatePrice(5), ValidationError);
 });
 
 test('royaltySplit: the pre-teach behaviour is unchanged for anchors without contributors', () => {
