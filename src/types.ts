@@ -299,6 +299,8 @@ export interface NodeConfig {
     stake: string;
     allowSelfAttest: boolean;
     intervalMs: number;
+    /** false = verify only on demand (`ainize patch verify` / POST /api/patches/:id/verify); no background rounds. Default true. */
+    auto?: boolean;
   };
   market: {
     currency: 'AIN' | 'CREDIT';

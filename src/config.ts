@@ -99,7 +99,7 @@ export function defaultConfig(opts: InitOptions = {}): NodeConfig {
       hookApi: 'http://localhost:8001',
       python: 'python3',
     },
-    verifier: { quorum: 2, stake: '5', allowSelfAttest: false, intervalMs: 5000 },
+    verifier: { quorum: 2, stake: '5', allowSelfAttest: false, intervalMs: 5000, auto: true },
     market: {
       currency: opts.currency ?? (ledger === 'ain' ? 'AIN' : 'CREDIT'),
       defaultPrice: '0.1',
