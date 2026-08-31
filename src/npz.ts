@@ -4,7 +4,7 @@
  * Supports ZIP_STORED and ZIP_DEFLATED members. Reads only what is asked for,
  * so a 350 MB patch can be inspected (row count, address set) cheaply.
  */
-import { openSync, readSync, closeSync, fstatSync } from 'node:fs';
+import { openSync, readSync, closeSync, fstatSync, writeFileSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
 
 interface ZipEntry {
@@ -223,4 +223,72 @@ export function sketchJaccard(a: number[], b: number[]): number {
   let both = 0;
   for (const v of union) if (a.includes(v) && setB.has(v)) both++;
   return both / k;
+}
+
+// ---------------------------------------------------------------- generic member access + minimal writer (teach mode)
+
+/** Read one array member of an .npz (header + raw little-endian body). Used by the teach stub to copy fixture rows. */
+export function readNpzMember(path: string, name: string): { header: NpyHeader; body: Buffer } {
+  const fd = openSync(path, 'r');
+  try {
+    const size = fstatSync(fd).size;
+    const entries = readCentralDirectory(fd, size);
+    const e = entries.find((x) => x.name === `${name}.npy` || x.name === name);
+    if (!e) throw new Error(`npz: no ${name} member`);
+    const data = entryData(fd, e);
+    const header = parseNpyHeader(data);
+    const body = Buffer.alloc(data.length - header.dataOffset);
+    data.copy(body, 0, header.dataOffset);
+    return { header, body };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+export interface NpzMemberSpec { name: string; descr: string; shape: number[]; body: Buffer }
+
+function crc32(buf: Buffer): number {
+  let c: number; const table = crc32.table ?? (crc32.table = (() => { const t = new Int32Array(256); for (let n = 0; n < 256; n++) { c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c; } return t; })());
+  let crc = -1;
+  for (let i = 0; i < buf.length; i++) crc = table[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
+  return (crc ^ -1) >>> 0;
+}
+crc32.table = null as Int32Array | null;
+
+function npyBytes(m: NpzMemberSpec): Buffer {
+  const shape = m.shape.length === 1 ? `(${m.shape[0]},)` : `(${m.shape.join(', ')})`;
+  let header = `{'descr': '${m.descr}', 'fortran_order': False, 'shape': ${shape}, }`;
+  const pad = 64 - ((10 + header.length + 1) % 64);
+  header += ' '.repeat(pad) + '\n';
+  const h = Buffer.alloc(10 + header.length);
+  h.write('\x93NUMPY', 0, 'latin1'); h[6] = 1; h[7] = 0; h.writeUInt16LE(header.length, 8); h.write(header, 10, 'latin1');
+  return Buffer.concat([h, m.body]);
+}
+
+/**
+ * Write a minimal .npz (ZIP_STORED members, npy v1) — enough for `inspectNpz` / `readNpzAddrs` / numpy.load.
+ * Only the teach stub backend uses it (a valid 1-row knowledge file when no fixture is available).
+ */
+export function writeNpz(path: string, members: NpzMemberSpec[]): void {
+  const locals: Buffer[] = []; const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const m of members) {
+    const name = Buffer.from(`${m.name}.npy`, 'utf8');
+    const data = npyBytes(m);
+    const crc = crc32(data);
+    const lh = Buffer.alloc(30);
+    lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0, 6); lh.writeUInt16LE(0, 8); lh.writeUInt16LE(0, 10); lh.writeUInt16LE(0, 12);
+    lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(name.length, 26); lh.writeUInt16LE(0, 28);
+    const ch = Buffer.alloc(46);
+    ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(0, 8); ch.writeUInt16LE(0, 10); ch.writeUInt16LE(0, 12); ch.writeUInt16LE(0, 14);
+    ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(name.length, 28); ch.writeUInt16LE(0, 30); ch.writeUInt16LE(0, 32);
+    ch.writeUInt16LE(0, 34); ch.writeUInt16LE(0, 36); ch.writeUInt32LE(0, 38); ch.writeUInt32LE(offset, 42);
+    locals.push(lh, name, data); centrals.push(ch, name);
+    offset += lh.length + name.length + data.length;
+  }
+  const cd = Buffer.concat(centrals);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(0, 4); eocd.writeUInt16LE(0, 6); eocd.writeUInt16LE(members.length, 8); eocd.writeUInt16LE(members.length, 10);
+  eocd.writeUInt32LE(cd.length, 12); eocd.writeUInt32LE(offset, 16); eocd.writeUInt16LE(0, 20);
+  writeFileSync(path, Buffer.concat([...locals, cd, eocd]));
 }
