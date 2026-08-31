@@ -221,6 +221,8 @@ export interface RuntimeStatus {
   repo: string | null;
   applied: string[];          // patch ids currently applied (from watchdog state)
   error?: string;
+  /** Raw upstream text of the last model-side failure (logs / diagnostics; `error` stays the friendly message). */
+  detail?: string;
 }
 
 export interface NodeConfig {
