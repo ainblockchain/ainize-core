@@ -187,8 +187,10 @@ export class AinLedger implements Ledger {
     return fromAin(await this.ain.db.ref(ref).getValue());
   }
 
+  /** AIN balance; an address the chain has never seen has no account yet (getBalance → null) and counts as 0. */
   async balance(address = this.identity.address): Promise<number> {
-    return this.ain.wallet.getBalance(address);
+    const raw = (await this.ain.wallet.getBalance(address)) as number | string | null | undefined;
+    return Number(raw ?? 0) || 0;
   }
 
   async transfer(to: string, value: number): Promise<{ tx_hash: string; key: string }> {
