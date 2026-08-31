@@ -131,6 +131,57 @@ export function withEmptyArrays<T>(body: T): T {
   return body;
 }
 
+/**
+ * Rebuild ledger records from the decoded /apps/knowledge/market subtree (pure; used by refresh() and unit tests).
+ * Records are sorted oldest → newest by `ts`. Supersede and subscription values written before `created_at`
+ * existed carry no timestamp of their own: a supersede is dated right after the newest attestation (or the
+ * anchor) of the *new* patch — it is written the moment that patch reaches quorum — and authored by that
+ * patch's author; a subscription is dated right after its branch was created.
+ */
+export function recordsFromMarketState(market: any): LedgerRecord[] {
+  const recs: LedgerRecord[] = [];
+  const push = (kind: RecordKind, ref: string, rawBody: any, author: string, ts: number) => {
+    const body = withEmptyArrays(rawBody);
+    recs.push({ hash: sha256Hex(`${ref}:${canonicalJson(body)}`), kind, body, author, ts, parents: [], sig: '' });
+  };
+  const anchorTs = new Map<string, number>();
+  const anchorAuthor = new Map<string, string>();
+  const attestTs = new Map<string, number>();
+  const branchTs = new Map<string, number>();
+  for (const [id, a] of Object.entries<any>(market?.patches ?? {})) if (a && typeof a.patch_sha256 === 'string' && a.author) {
+    push('anchor', `${MARKET}/patches/${id}`, a, a.author, a.created_at ?? 0);
+    anchorTs.set(id, a.created_at ?? 0); anchorAuthor.set(id, a.author);
+  }
+  for (const [id, m] of Object.entries<any>(market?.attestations ?? {}))
+    for (const [v, at] of Object.entries<any>(m)) if (at && at.patch_id === id && at.verifier === v && typeof at.passed === 'boolean') {
+      push('attest', `${MARKET}/attestations/${id}/${v}`, at, v, at.created_at ?? 0);
+      attestTs.set(id, Math.max(attestTs.get(id) ?? 0, at.created_at ?? 0));
+    }
+  for (const [id, m] of Object.entries<any>(market?.settlements ?? {}))
+    for (const [k, s] of Object.entries<any>(m)) push('settle', `${MARKET}/settlements/${id}/${k}`, s, s.seller, s.created_at ?? 0);
+  for (const [id, m] of Object.entries<any>(market?.challenges ?? {}))
+    for (const [c, ch] of Object.entries<any>(m)) push('challenge', `${MARKET}/challenges/${id}/${c}`, ch, c, ch.created_at ?? 0);
+  for (const [k, b] of Object.entries<any>(market?.branches ?? {})) {
+    push('branch', `${MARKET}/branches/${k}`, b, b.owner, b.created_at ?? 0);
+    if (typeof b.name === 'string') branchTs.set(b.name, b.created_at ?? 0);
+  }
+  for (const [addr, n] of Object.entries<any>(market?.nodes ?? {})) push('node', `${MARKET}/nodes/${addr}`, n, addr, n.last_seen ?? 0);
+  for (const [o, m] of Object.entries<any>(market?.supersedes ?? {}))
+    for (const [nw, s] of Object.entries<any>(m)) {
+      const related = Math.max(attestTs.get(nw) ?? 0, anchorTs.get(nw) ?? 0);
+      const ts = typeof s.created_at === 'number' && s.created_at > 0 ? s.created_at : related ? related + 1 : 0;
+      push('supersede', `${MARKET}/supersedes/${o}/${nw}`, s, anchorAuthor.get(nw) ?? '', ts);
+    }
+  for (const [node, m] of Object.entries<any>(market?.subscriptions ?? {}))
+    for (const [b, s] of Object.entries<any>(m)) {
+      const related = branchTs.get(s?.branch) ?? 0;
+      const ts = typeof s.created_at === 'number' && s.created_at > 0 ? s.created_at : related ? related + 1 : 0;
+      push('subscribe', `${MARKET}/subscriptions/${node}/${b}`, s, node, ts);
+    }
+  recs.sort((x, y) => x.ts - y.ts);
+  return recs;
+}
+
 export class AinLedger implements Ledger {
   readonly kind = 'ain' as const;
   readonly ain: any;
@@ -193,8 +244,10 @@ export class AinLedger implements Ledger {
     return fromAin(await this.ain.db.ref(ref).getValue());
   }
 
+  /** AIN balance; an address the chain has never seen has no account yet (getBalance → null) and counts as 0. */
   async balance(address = this.identity.address): Promise<number> {
-    return this.ain.wallet.getBalance(address);
+    const raw = (await this.ain.wallet.getBalance(address)) as number | string | null | undefined;
+    return Number(raw ?? 0) || 0;
   }
 
   async transfer(to: string, value: number): Promise<{ tx_hash: string; key: string }> {
@@ -365,25 +418,7 @@ export class AinLedger implements Ledger {
   /** Re-read the market subtree and rebuild the record cache. */
   async refresh(): Promise<void> {
     const market = (fromAin(await this.ain.db.ref(MARKET).getValue()) as any) ?? {};
-    const recs: LedgerRecord[] = [];
-    const push = (kind: RecordKind, ref: string, rawBody: any, author: string, ts: number) => {
-      const body = withEmptyArrays(rawBody);
-      recs.push({ hash: sha256Hex(`${ref}:${canonicalJson(body)}`), kind, body, author, ts, parents: [], sig: '' });
-    };
-    for (const [id, a] of Object.entries<any>(market.patches ?? {})) if (a && typeof a.patch_sha256 === 'string' && a.author) push('anchor', `${MARKET}/patches/${id}`, a, a.author, a.created_at ?? 0);
-    for (const [id, m] of Object.entries<any>(market.attestations ?? {}))
-      for (const [v, at] of Object.entries<any>(m)) if (at && at.patch_id === id && at.verifier === v && typeof at.passed === 'boolean') push('attest', `${MARKET}/attestations/${id}/${v}`, at, v, at.created_at ?? 0);
-    for (const [id, m] of Object.entries<any>(market.settlements ?? {}))
-      for (const [k, s] of Object.entries<any>(m)) push('settle', `${MARKET}/settlements/${id}/${k}`, s, s.seller, s.created_at ?? 0);
-    for (const [id, m] of Object.entries<any>(market.challenges ?? {}))
-      for (const [c, ch] of Object.entries<any>(m)) push('challenge', `${MARKET}/challenges/${id}/${c}`, ch, c, ch.created_at ?? 0);
-    for (const [k, b] of Object.entries<any>(market.branches ?? {})) push('branch', `${MARKET}/branches/${k}`, b, b.owner, b.created_at ?? 0);
-    for (const [addr, n] of Object.entries<any>(market.nodes ?? {})) push('node', `${MARKET}/nodes/${addr}`, n, addr, n.last_seen ?? 0);
-    for (const [o, m] of Object.entries<any>(market.supersedes ?? {}))
-      for (const [nw, s] of Object.entries<any>(m)) push('supersede', `${MARKET}/supersedes/${o}/${nw}`, s, '', 0);
-    for (const [node, m] of Object.entries<any>(market.subscriptions ?? {}))
-      for (const [b, s] of Object.entries<any>(m)) push('subscribe', `${MARKET}/subscriptions/${node}/${b}`, s, node, 0);
-    recs.sort((x, y) => x.ts - y.ts);
+    const recs = recordsFromMarketState(market);
     const known = new Set(this.cache.map((r) => r.hash));
     for (const r of recs) if (!known.has(r.hash)) this.events.onRecord?.(r);
     this.cache = recs;

@@ -20,6 +20,8 @@ export interface SupersedeRecord {
   new_patch_id: string;
   overlap_rows: number;
   reason: string;
+  /** When the supersede was written (ms). Older on-chain records lack it — readers fall back to the new patch's attest/anchor time. */
+  created_at?: number;
 }
 
 export interface SubscriptionRecord {
@@ -27,6 +29,8 @@ export interface SubscriptionRecord {
   branch: string;
   action: 'subscribe' | 'unsubscribe';
   patch_ids: string[];
+  /** When the (un)subscribe was written (ms). Older on-chain records lack it — readers fall back to the branch's creation time. */
+  created_at?: number;
 }
 
 export type RecordBody =

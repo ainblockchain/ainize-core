@@ -6,7 +6,7 @@ import { pythonJson, canonicalJson, sha256Hex } from '../src/canonical.js';
 import { createIdentity, signMessage, verifyMessage, hashPassword, verifyPassword } from '../src/identity.js';
 import { LocalLedger } from '../src/local-ledger.js';
 import { deriveCatalog, royaltySplit, sanitizeContributors, validateContributors, validatePrice, ValidationError } from '../src/catalog.js';
-import { toAin, fromAin, withEmptyArrays } from '../src/ain-ledger.js';
+import { toAin, fromAin, withEmptyArrays, recordsFromMarketState } from '../src/ain-ledger.js';
 import { DEFAULT_TEACH_CONFIG, defaultConfig, loadConfig, saveConfig, teachConfig } from '../src/config.js';
 import { addressSet, intersectionCount, addressSketch, sketchJaccard } from '../src/npz.js';
 import type { PatchAnchor, Attestation, Contributor, LedgerRecord } from '../src/types.js';
@@ -222,4 +222,28 @@ test('config: teach defaults (disabled, review, gradient) and loadConfig fills a
     assert.equal(partial.trainer.container, 'flashtrain');
     assert.equal(partial.publish, 'review');
   } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test('AIN market state → records: supersede/subscribe values without created_at are dated after the related attest/branch (never ts=0)', () => {
+  const market = {
+    patches: { a: { id: 'a', patch_sha256: 'x', author: '0xA', created_at: 1000 }, b: { id: 'b', patch_sha256: 'y', author: '0xB', created_at: 2000 } },
+    attestations: { b: { '0xV': { patch_id: 'b', verifier: '0xV', passed: true, created_at: 3000 } } },
+    branches: { law_KR: { name: 'law/KR', owner: '0xA', context: { jurisdiction: 'KR' }, created_at: 1500 } },
+    supersedes: { a: { b: { old_patch_id: 'a', new_patch_id: 'b', overlap_rows: 5, reason: 'r' } } },
+    subscriptions: { '0xN': { law_KR: { node: '0xN', branch: 'law/KR', action: 'subscribe' } } },
+  };
+  const recs = recordsFromMarketState(market);
+  assert.deepEqual(recs.map((r) => `${r.kind}@${r.ts}`), ['anchor@1000', 'branch@1500', 'subscribe@1501', 'anchor@2000', 'attest@3000', 'supersede@3001']);
+  assert.equal(recs.find((r) => r.kind === 'supersede')!.author, '0xB', 'a supersede is attributed to the author of the newer patch');
+  assert.equal(recs.find((r) => r.kind === 'subscribe')!.author, '0xN');
+  // an explicit created_at (new records) wins over the fallback
+  (market.supersedes.a.b as { created_at?: number }).created_at = 5000;
+  (market.subscriptions['0xN'].law_KR as { created_at?: number }).created_at = 6000;
+  const fresh = recordsFromMarketState(market);
+  assert.equal(fresh.find((r) => r.kind === 'supersede')!.ts, 5000);
+  assert.equal(fresh.find((r) => r.kind === 'subscribe')!.ts, 6000);
+  // a supersede whose new patch is unknown still gets a record (ts 0 = unknown), and records rebuild identically (stable hashes)
+  const orphan = recordsFromMarketState({ supersedes: { a: { zz: { old_patch_id: 'a', new_patch_id: 'zz', overlap_rows: 1, reason: 'r' } } } });
+  assert.equal(orphan.length, 1); assert.equal(orphan[0].ts, 0);
+  assert.deepEqual(recordsFromMarketState(market).map((r) => r.hash), fresh.map((r) => r.hash));
 });
