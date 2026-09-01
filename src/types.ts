@@ -324,7 +324,9 @@ export interface NodeConfig {
     api?: string;              // http://localhost:8000
     hookApi?: string;          // http://localhost:8001
     python?: string;
-    /** Patch-hook mailbox of the serving instance `api` points at (default <repo>/ple_patch). One mailbox + lock per serving instance. */
+    /** Patch-hook mailbox of the serving instance `api` points at (default <repo>/ple_patch). One directory per
+     *  vLLM instance: it carries the apply/remove requests and the cross-process runtime lock, so two servers
+     *  (e.g. the demo cluster on its own GPUs and a second instance) never write into each other's table. */
     patchDir?: string;         // /mnt/newdata/qwen3.8/ple_patch_e2e
     /** Sampling + degeneracy guard per generation path (D1). Omit for the measured defaults. */
     sampling?: RuntimeSampling;
