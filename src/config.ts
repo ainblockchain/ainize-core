@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createIdentity, identityFromPrivateKey } from './identity.js';
-import type { NodeConfig, NodeRole, TeachConfig } from './types.js';
+import type { NodeConfig, NodeRole, TeachConfig, TeachEffort } from './types.js';
 
 export const VERSION = '0.1.0';
 export const DEFAULT_HOME = process.env.NGRAM_HOME ?? join(homedir(), '.ngram');
@@ -59,16 +59,103 @@ export const DEFAULT_TEACH_CONFIG: TeachConfig = {
   stubOffline: false,
   trainer: { container: 'flashtrain', script: 'train/teach.py', gpus: '4,5,6', maxSteps: 20, timeoutMs: 1_800_000, minFreeGpuMb: 20_000, idleStopMin: 30 },
   locality: { prompts: DEFAULT_LOCALITY_PROMPTS, minSame: 11 },
+  dataset: {
+    maxBytes: 4_000_000, maxSourceLines: 50_000, maxRows: 2_000,
+    perKeyPerDay: 10, keptPerKey: 20,
+    rowsPerKeyPerDay: 300, rowsPerIpPerDay: 500, bytesPerKeyPerDay: 20_000_000,
+    ttlDays: 7, stagedTtlHours: 24, createsPerIpPerMin: 10, declarationRows: 100,
+  },
+  rowsPerJob: { floorGradient: 8, floorStub: 200, ceiling: 1_000, safetyFactor: 2 },
+  effort: { quick: { maxSteps: 8, evalEvery: 2 }, balanced: { maxSteps: 20, evalEvery: 2 }, thorough: { maxSteps: 40, evalEvery: 4 }, lr: 2e-3 },
+  check: { callBudget: 68, sampleRows: 24, chatFormRows: 8, parentSamplesMax: 20, lockTargetMs: 300_000, lockAbortMs: 480_000 },
+  preflight: { sampleRows: 24, perCall: 8 },
+  queuedRowsMax: 2_000,
 };
+
+/** Operator ceiling for `dataset.maxBytes` — a node may not accept an upload larger than this whatever the config says. */
+export const DATASET_MAX_BYTES_CEILING = 20_000_000;
 
 /** Effective teach config: `cfg.teach` merged over the defaults (older config.json files have no `teach` block). */
 export function teachConfig(cfg: Pick<NodeConfig, 'teach'>): TeachConfig {
   const t = (cfg.teach ?? {}) as Partial<TeachConfig>;
+  const d = DEFAULT_TEACH_CONFIG;
   return {
-    ...DEFAULT_TEACH_CONFIG, ...t,
-    trainer: { ...DEFAULT_TEACH_CONFIG.trainer, ...(t.trainer ?? {}) },
-    locality: { ...DEFAULT_TEACH_CONFIG.locality, ...(t.locality ?? {}) },
+    ...d, ...t,
+    trainer: { ...d.trainer, ...(t.trainer ?? {}) },
+    locality: { ...d.locality, ...(t.locality ?? {}) },
+    dataset: { ...d.dataset, ...(t.dataset ?? {}) },
+    rowsPerJob: { ...d.rowsPerJob, ...(t.rowsPerJob ?? {}) },
+    effort: {
+      ...d.effort, ...(t.effort ?? {}),
+      quick: { ...d.effort.quick, ...(t.effort?.quick ?? {}) },
+      balanced: { ...d.effort.balanced, ...(t.effort?.balanced ?? {}) },
+      thorough: { ...d.effort.thorough, ...(t.effort?.thorough ?? {}) },
+    },
+    check: { ...d.check, ...(t.check ?? {}) },
+    preflight: { ...d.preflight, ...(t.preflight ?? {}) },
+    queuedRowsMax: t.queuedRowsMax ?? d.queuedRowsMax,
   };
+}
+
+/** One measured lesson, as `teach_stats` records it (design §6.5). Only `backend: 'gradient'` rows may drive a visitor-facing number. */
+export interface TeachTimingSample {
+  total_s: number;
+  load_s: number | null;
+  steps: number | null;
+  rows_trained: number | null;
+  sentences: number | null;
+}
+
+/** How many questions per lesson, and whether the number was measured (design §D1). */
+export interface RowsPerJobResult {
+  rows: number;
+  source: 'default' | 'measured' | 'operator';
+  /** p50 seconds per question per pass, gradient samples only; null until the fit exists. */
+  s_per_row_p50: number | null;
+  s_per_row_p90: number | null;
+  load_s_p50: number | null;
+  samples: number;
+}
+
+export const ETA_MIN_SAMPLES = 3;
+
+export function percentileOf(xs: number[], p: number): number | null {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.floor(p * (s.length - 1)))];
+}
+
+/**
+ * How many questions one lesson may train on this node (design §D1).
+ *
+ *   s_per_row_p90 = p90( (total_s − load_s) / (rows_trained × steps) )   over gradient samples only
+ *   max_rows      = floor( (timeoutMs/1000 − load_s_p90) / (passes × s_per_row_p90) / safetyFactor )
+ *   rowsPerJob    = clamp(floor, max_rows, ceiling)
+ *
+ * The whole derivation is skipped — the floor is used — while fewer than `ETA_MIN_SAMPLES` gradient samples exist, or
+ * while the trainer has not shown that it supports sampled evaluation (design §16: an unsampled eval at 100 questions
+ * would spend more time probing than training). An operator override disables the derivation entirely.
+ */
+export function deriveRowsPerJob(
+  cfg: TeachConfig,
+  samples: TeachTimingSample[],
+  opts: { effort?: TeachEffort; override?: number | null; trainerSupportsSampling?: boolean } = {},
+): RowsPerJobResult {
+  const floor = cfg.backend === 'stub' ? cfg.rowsPerJob.floorStub : cfg.rowsPerJob.floorGradient;
+  const ceiling = Math.max(floor, cfg.rowsPerJob.ceiling);
+  const passes = cfg.effort[opts.effort ?? 'balanced'].maxSteps;
+  const usable = samples.filter((s) => Number.isFinite(s.total_s) && (s.rows_trained ?? 0) > 0 && (s.steps ?? 0) > 0);
+  const perRow = usable.map((s) => (s.total_s - (s.load_s ?? 0)) / (s.rows_trained! * s.steps!)).filter((x) => Number.isFinite(x) && x > 0);
+  const loads = usable.map((s) => s.load_s).filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
+  const s50 = percentileOf(perRow, 0.5);
+  const s90 = percentileOf(perRow, 0.9);
+  const l50 = percentileOf(loads, 0.5);
+  const base: Omit<RowsPerJobResult, 'rows' | 'source'> = { s_per_row_p50: s50, s_per_row_p90: s90, load_s_p50: l50, samples: perRow.length };
+  if (typeof opts.override === 'number' && opts.override > 0) return { rows: Math.min(ceiling, Math.max(1, Math.floor(opts.override))), source: 'operator', ...base };
+  if (perRow.length < ETA_MIN_SAMPLES || s90 === null || opts.trainerSupportsSampling !== true) return { rows: floor, source: 'default', ...base };
+  const budget_s = cfg.trainer.timeoutMs / 1000 - (l50 ?? 0);
+  const maxRows = Math.floor(budget_s / (passes * s90) / Math.max(1, cfg.rowsPerJob.safetyFactor));
+  return { rows: Math.min(ceiling, Math.max(floor, maxRows)), source: 'measured', ...base };
 }
 
 export function defaultConfig(opts: InitOptions = {}): NodeConfig {
