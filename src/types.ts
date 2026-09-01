@@ -293,6 +293,8 @@ export interface NodeConfig {
     api?: string;              // http://localhost:8000
     hookApi?: string;          // http://localhost:8001
     python?: string;
+    /** Patch-hook mailbox of the serving instance `api` points at (default <repo>/ple_patch). One mailbox + lock per serving instance. */
+    patchDir?: string;         // /mnt/newdata/qwen3.8/ple_patch_e2e
   };
   verifier?: {
     quorum: number;
