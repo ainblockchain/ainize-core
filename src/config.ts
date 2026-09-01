@@ -25,6 +25,7 @@ export interface InitOptions {
   privateKey?: string;
   runtimeRepo?: string;
   runtimeApi?: string;
+  runtimePatchDir?: string;
   currency?: 'AIN' | 'CREDIT';
   publicUrl?: string;
 }
@@ -96,6 +97,7 @@ export function defaultConfig(opts: InitOptions = {}): NodeConfig {
     runtime: {
       repo: opts.runtimeRepo ?? (existsSync('/mnt/newdata/qwen3.8') ? '/mnt/newdata/qwen3.8' : undefined),
       api: opts.runtimeApi ?? 'http://localhost:8000',
+      patchDir: opts.runtimePatchDir,
       hookApi: 'http://localhost:8001',
       python: 'python3',
     },
@@ -141,6 +143,7 @@ export function applyEnv(cfg: NodeConfig, env = process.env): NodeConfig {
   if (env.NGRAM_PUBLIC_URL) cfg.publicUrl = env.NGRAM_PUBLIC_URL;
   if (env.NGRAM_RUNTIME_REPO) cfg.runtime = { ...cfg.runtime, repo: env.NGRAM_RUNTIME_REPO };
   if (env.NGRAM_RUNTIME_API) cfg.runtime = { ...cfg.runtime, api: env.NGRAM_RUNTIME_API };
+  if (env.NGRAM_RUNTIME_PATCH_DIR) cfg.runtime = { ...cfg.runtime, patchDir: env.NGRAM_RUNTIME_PATCH_DIR };
   if (env.NGRAM_TEACH_BACKEND === 'stub' || env.NGRAM_TEACH_BACKEND === 'gradient') cfg.teach = { ...teachConfig(cfg), backend: env.NGRAM_TEACH_BACKEND };
   if (env.NGRAM_TEACH_ENABLED === '1' || env.NGRAM_TEACH_ENABLED === '0') cfg.teach = { ...teachConfig(cfg), enabled: env.NGRAM_TEACH_ENABLED === '1' };
   if (env.NGRAM_TRUST_PROXY !== undefined) cfg.server = { ...(cfg.server ?? {}), trustProxy: parseTrustProxy(env.NGRAM_TRUST_PROXY) };
