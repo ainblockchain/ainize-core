@@ -9,7 +9,8 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  DEFAULT_TEACH_CONFIG, DATASET_MAX_BYTES_CEILING, ETA_MIN_SAMPLES, defaultConfig, deriveRowsPerJob, loadConfig, percentileOf, teachConfig,
+  DEFAULT_TEACH_CONFIG, DATASET_MAX_BYTES_CEILING, ETA_MIN_SAMPLES, coerceConfigValue, configField, configFieldType, defaultConfig,
+  deriveRowsPerJob, loadConfig, nearestConfigKey, percentileOf, teachConfig, validateConfig,
   type NodeConfig, type TeachConfig, type TeachTimingSample,
 } from '../src/index.js';
 
@@ -120,3 +121,44 @@ test('percentileOf is the p50/p90 the whole design quotes', () => {
 });
 
 process.on('exit', () => rmSync(tmp, { recursive: true, force: true }));
+
+// ------------------------------------------------------------------ the config schema (review-2 item 123)
+
+test('every config this product writes validates, and a v1 config without the teach block does too', () => {
+  assert.deepEqual(validateConfig(defaultConfig({ home: join(tmp, 'schema') })), []);
+  const home = join(tmp, 'v1');
+  assert.deepEqual(validateConfig(loadConfig(home)!), []);
+});
+
+test('validateConfig names every value the node cannot boot on, and only warns about keys it does not know', () => {
+  const cfg = defaultConfig({ home: join(tmp, 'bad') }) as unknown as Record<string, unknown>;
+  cfg.port = 'notanumber';
+  cfg.roles = ['admin'];
+  cfg.host = '999.999.999.999';
+  (cfg.market as Record<string, unknown>).royaltyShare = 47;
+  (cfg.verifier as Record<string, unknown>).quorum = -3;
+  cfg.strayKey = 'hello';
+  const problems = validateConfig(cfg);
+  const byKey = Object.fromEntries(problems.map((p) => [p.key, p]));
+  assert.equal(byKey['port'].message, 'must be a number');
+  assert.equal(byKey['roles.0'].kind, 'invalid');
+  assert.match(byKey['host'].message, /^must be an interface to bind/);
+  assert.equal(byKey['market.royaltyShare'].message, 'must be a fraction between 0 and 1');
+  assert.equal(byKey['verifier.quorum'].message, 'must be at least 1');
+  assert.equal(byKey['strayKey'].kind, 'unknown');                 // reported, never a refusal
+  assert.equal(problems.filter((p) => p.kind === 'invalid').length, 5);
+});
+
+test('a mistyped key is answered with the nearest real one, and a price stays a string', () => {
+  assert.equal(nearestConfigKey('verifier.stak'), 'verifier.stake');
+  assert.equal(nearestConfigKey('market.defaultprice'), 'market.defaultPrice');
+  assert.equal(nearestConfigKey('ledger.knid'), 'ledger.kind');
+  assert.equal(nearestConfigKey('typo.that.does.not.exist'), null);
+  assert.equal(configField('nope.nope'), null);
+  // money is a decimal string everywhere in this product, so `config set market.defaultPrice 9.99` must not store 9.99
+  assert.equal(coerceConfigValue(configField('market.defaultPrice')!, '9.99'), '9.99');
+  assert.equal(coerceConfigValue(configField('port')!, '3402'), 3402);
+  assert.equal(coerceConfigValue(configField('teach.enabled')!, 'false'), false);
+  assert.deepEqual(coerceConfigValue(configField('roles')!, 'seller, verifier'), ['seller', 'verifier']);
+  assert.equal(configFieldType(configField('teach.publish')!), "one of 'review', 'auto', 'never'");
+});

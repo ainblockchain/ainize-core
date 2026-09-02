@@ -8,3 +8,4 @@ export * from './local-ledger.js';
 export * from './ain-ledger.js';
 export * from './catalog.js';
 export * from './config.js';
+export * from './config-schema.js';
