@@ -260,6 +260,37 @@ export interface PatchManifest {
   download_token: string;
 }
 
+/**
+ * Sampling sent to the serving model on one generation path (D1 — runaway/degenerate answers).
+ * Every field is optional; an omitted field is simply not sent, so the server default applies.
+ * Measured on the shared e2e instance (PROBE A/B, 2026-09-01): a stop sequence is the only knob that
+ * lowered degeneration AND raised answer accuracy; repetition/frequency penalties left half the loops
+ * in place and made the model refuse legitimately repetitive questions, so they default to unset.
+ */
+export interface SamplingOptions {
+  /** Stop sequences (vLLM `stop`). Chat default ["\n\n\n\n", "<think>"]; completion default ["\n\n", "<think>"]. */
+  stop?: string[];
+  /** Cap on generated tokens when the caller does not pass one. */
+  maxTokens?: number;
+  temperature?: number;
+  /** vLLM `repetition_penalty` (1 = off). Measured harmful at 1.1 — leave unset unless you re-measure. */
+  repetitionPenalty?: number;
+  /** vLLM `frequency_penalty` (0 = off). Lowers loops but costs correct answers. */
+  frequencyPenalty?: number;
+  /** vLLM `presence_penalty` (0 = off). */
+  presencePenalty?: number;
+  /** Post-generation degeneracy guard (repetition detector + truncation). Default on; `false` returns the raw text. */
+  guard?: boolean;
+}
+
+/** Per-path sampling. `verify` is deliberately absent: benchmark verification always generates on the pre-guard settings. */
+export interface RuntimeSampling {
+  /** /v1/chat/completions — the path the web Live test uses. */
+  chat?: SamplingOptions;
+  /** /v1/completions — the operator's free-generation endpoint (verification and teach opt out explicitly). */
+  complete?: SamplingOptions;
+}
+
 export interface RuntimeStatus {
   available: boolean;
   api: string | null;
@@ -300,6 +331,12 @@ export interface NodeConfig {
     api?: string;              // http://localhost:8000
     hookApi?: string;          // http://localhost:8001
     python?: string;
+    /** Patch-hook mailbox of the serving instance `api` points at (default <repo>/ple_patch). One directory per
+     *  vLLM instance: it carries the apply/remove requests and the cross-process runtime lock, so two servers
+     *  (e.g. the demo cluster on its own GPUs and a second instance) never write into each other's table. */
+    patchDir?: string;         // /mnt/newdata/qwen3.8/ple_patch_e2e
+    /** Sampling + degeneracy guard per generation path (D1). Omit for the measured defaults. */
+    sampling?: RuntimeSampling;
   };
   verifier?: {
     quorum: number;
