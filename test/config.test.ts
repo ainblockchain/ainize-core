@@ -5,11 +5,12 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, statSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_TEACH_CONFIG, DATASET_MAX_BYTES_CEILING, ETA_MIN_SAMPLES, coerceConfigValue, configField, configFieldType, defaultConfig,
+  DEFAULT_TEACH_CONFIG, DATASET_MAX_BYTES_CEILING, ETA_MIN_SAMPLES, buildStamp, coerceConfigValue, configField, configFieldType, defaultConfig,
   deriveRowsPerJob, loadConfig, mergeConfigChanges, nearestConfigKey, percentileOf, teachConfig, validateConfig,
   type NodeConfig, type TeachConfig, type TeachTimingSample,
 } from '../src/index.js';
@@ -180,4 +181,17 @@ test('mergeConfigChanges folds only what the running node changed onto the file 
   assert.equal(merged.verifier!.quorum, 3);
   // a node that changed nothing writes the file back unchanged
   assert.deepEqual(mergeConfigChanges(onDisk, boot, structuredClone(boot)), onDisk);
+});
+
+test('buildStamp is measured once, when the code is loaded — a rebuild under a running process does not change it (item 141)', () => {
+  const first = buildStamp()!;
+  assert.match(first, /^\d{4}-\d\d-\d\dT/);
+  // `npm run build` replaces the file on disk; the process is still running the code it loaded, and must say so
+  const mod = fileURLToPath(new URL('../src/config.ts', import.meta.url));
+  const st = statSync(mod);
+  utimesSync(mod, st.atime, new Date(Date.parse(first) + 3_600_000));
+  try {
+    assert.equal(buildStamp(), first, 'the stamp is the build this process loaded, not the file now on disk');
+    assert.notEqual(statSync(mod).mtime.toISOString(), first, 'the file really did change underneath');
+  } finally { utimesSync(mod, st.atime, st.mtime); }
 });

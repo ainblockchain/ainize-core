@@ -10,10 +10,15 @@ export const VERSION = '0.1.0';
 /**
  * When the running code was last built. Measured — the mtime of this very module — never a string frozen into a
  * config file: after an upgrade `version` alone (unchanged for a year) cannot tell two builds apart (item 141).
+ *
+ * Measured ONCE, when the module is loaded: the file is read then, so that is the code this process runs. A
+ * `npm run build` under a running node replaces the file on disk but not the code in memory — stat'ing it again
+ * on every call made a node started at 09:04 report the 11:36 build it had never loaded.
  */
-export function buildStamp(): string | undefined {
+const BUILD_STAMP: string | undefined = (() => {
   try { return statSync(fileURLToPath(import.meta.url)).mtime.toISOString(); } catch { return undefined; }
-}
+})();
+export function buildStamp(): string | undefined { return BUILD_STAMP; }
 export const DEFAULT_HOME = process.env.NGRAM_HOME ?? join(homedir(), '.ngram');
 
 export function configPath(home = DEFAULT_HOME): string {
