@@ -210,7 +210,9 @@ export interface PeerInfo {
 export type NodeRole = 'seller' | 'verifier' | 'serving' | 'gateway';
 
 /** Generic signed ledger record (local-ledger mode). Content-addressed by `hash`. */
-export type RecordKind = 'anchor' | 'attest' | 'settle' | 'challenge' | 'branch' | 'node' | 'supersede' | 'subscribe';
+/** Every kind of record the ledger holds — the closed list `ainize ledger ls --kind` offers. */
+export const RECORD_KINDS = ['anchor', 'attest', 'settle', 'challenge', 'branch', 'node', 'supersede', 'subscribe'] as const;
+export type RecordKind = (typeof RECORD_KINDS)[number];
 
 export interface LedgerRecord<T = unknown> {
   hash: string;               // sha256(canonical({kind, body, author, ts, parents}))
