@@ -1,10 +1,19 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
 import { createIdentity, identityFromPrivateKey } from './identity.js';
 import type { NodeConfig, NodeRole, TeachConfig, TeachEffort } from './types.js';
 
 export const VERSION = '0.1.0';
+
+/**
+ * When the running code was last built. Measured — the mtime of this very module — never a string frozen into a
+ * config file: after an upgrade `version` alone (unchanged for a year) cannot tell two builds apart (item 141).
+ */
+export function buildStamp(): string | undefined {
+  try { return statSync(fileURLToPath(import.meta.url)).mtime.toISOString(); } catch { return undefined; }
+}
 export const DEFAULT_HOME = process.env.NGRAM_HOME ?? join(homedir(), '.ngram');
 
 export function configPath(home = DEFAULT_HOME): string {

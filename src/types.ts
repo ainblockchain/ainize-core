@@ -203,7 +203,12 @@ export interface PeerInfo {
   model?: string;             // id_M served by this node (if serving)
   branches: string[];         // subscribed branches
   blobs: string[];            // sha256 of patch bodies held
+  /** The build that is RUNNING (`VERSION` from the code), not the string config.json was written with. */
   version: string;
+  /** When this node's binaries were last built/edited — the only honest answer to "which build is that?" (item 141). */
+  build?: string;
+  /** `version` of config.json: the schema version it was written by, kept for migrations. */
+  config_version?: string;
   last_seen: number;
 }
 
