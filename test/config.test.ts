@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   DEFAULT_TEACH_CONFIG, DATASET_MAX_BYTES_CEILING, ETA_MIN_SAMPLES, coerceConfigValue, configField, configFieldType, defaultConfig,
-  deriveRowsPerJob, loadConfig, nearestConfigKey, percentileOf, teachConfig, validateConfig,
+  deriveRowsPerJob, loadConfig, mergeConfigChanges, nearestConfigKey, percentileOf, teachConfig, validateConfig,
   type NodeConfig, type TeachConfig, type TeachTimingSample,
 } from '../src/index.js';
 
@@ -161,4 +161,23 @@ test('a mistyped key is answered with the nearest real one, and a price stays a 
   assert.equal(coerceConfigValue(configField('teach.enabled')!, 'false'), false);
   assert.deepEqual(coerceConfigValue(configField('roles')!, 'seller, verifier'), ['seller', 'verifier']);
   assert.equal(configFieldType(configField('teach.publish')!), "one of 'review', 'auto', 'never'");
+});
+
+test('mergeConfigChanges folds only what the running node changed onto the file as it is now (item 124)', () => {
+  const boot = defaultConfig({ home: join(tmp, 'merge'), name: 'n', port: 3402, ledger: 'local' });
+  const live = structuredClone(boot);
+  live.peers = ['http://peer:3403'];                       // the console added a peer
+  live.operatorPasswordHash = 'hash';                      // …and set the password
+  live.name = 'renamed';                                   // …and a display name
+  const onDisk = structuredClone(boot);
+  onDisk.market.defaultPrice = '9.99';                     // meanwhile `ainize config set` wrote this
+  onDisk.verifier!.quorum = 3;
+  const merged = mergeConfigChanges(onDisk, boot, live);
+  assert.deepEqual(merged.peers, ['http://peer:3403']);
+  assert.equal(merged.operatorPasswordHash, 'hash');
+  assert.equal(merged.name, 'renamed');
+  assert.equal(merged.market.defaultPrice, '9.99', 'the CLI edit is not reverted');
+  assert.equal(merged.verifier!.quorum, 3);
+  // a node that changed nothing writes the file back unchanged
+  assert.deepEqual(mergeConfigChanges(onDisk, boot, structuredClone(boot)), onDisk);
 });

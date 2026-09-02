@@ -219,6 +219,34 @@ export function saveConfig(cfg: NodeConfig, home = DEFAULT_HOME): string {
   return p;
 }
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Fold the changes a running node made to its own config (`boot` → `live`: the operator password, a peer added or
+ * removed in the console, a display name) onto whatever is on disk NOW, instead of writing the node's whole
+ * start-up snapshot over it. Without this, one click in the console silently reverted every `ainize config set`
+ * made since the node started (item 124).
+ */
+export function mergeConfigChanges(onDisk: NodeConfig, boot: NodeConfig, live: NodeConfig): NodeConfig {
+  const out = structuredClone(onDisk) as unknown as Record<string, unknown>;
+  const walk = (b: Record<string, unknown> | undefined, l: Record<string, unknown> | undefined, target: Record<string, unknown>) => {
+    for (const k of new Set([...Object.keys(b ?? {}), ...Object.keys(l ?? {})])) {
+      const bv = b?.[k];
+      const lv = l?.[k];
+      if (JSON.stringify(bv) === JSON.stringify(lv)) continue;      // the node did not touch it — the disk wins
+      if (lv === undefined) { delete target[k]; continue; }
+      if (isPlainObject(bv) && isPlainObject(lv)) {
+        if (!isPlainObject(target[k])) target[k] = {};
+        walk(bv, lv, target[k] as Record<string, unknown>);
+      } else {
+        target[k] = structuredClone(lv);
+      }
+    }
+  };
+  walk(boot as unknown as Record<string, unknown>, live as unknown as Record<string, unknown>, out);
+  return out as unknown as NodeConfig;
+}
+
 /** Environment overrides (handy for docker / multi-node demos). */
 export function applyEnv(cfg: NodeConfig, env = process.env): NodeConfig {
   if (env.NGRAM_PORT) cfg.port = Number(env.NGRAM_PORT);
