@@ -150,7 +150,12 @@ export interface Attestation {
   verified_on: string;
   /** Restart-aware verification: number of reversions detected & re-applied (청구항 2(d)). */
   restarts_detected?: number;
-  stake: string;
+  /**
+   * @deprecated Historical field. Builds up to 2026-09 copied `verifier.stake` in here and the UI called it a
+   * "deposit the verifier loses if it verified wrongly" — nothing was ever escrowed, transferred or slashed
+   * (item 127). New attestations omit it; readers must not present it as money at risk.
+   */
+  stake?: string;
   sig: string;
   created_at: number;
 }
@@ -172,7 +177,8 @@ export interface Challenge {
   patch_id: string;
   challenger: string;
   reason: string;
-  stake: string;
+  /** @deprecated Historical field — see `Attestation.stake`. Nothing is escrowed; new challenges omit it. */
+  stake?: string;
   created_at: number;
 }
 
@@ -340,7 +346,12 @@ export interface NodeConfig {
   };
   verifier?: {
     quorum: number;
-    stake: string;
+    /**
+     * @deprecated Never escrowed. Kept so existing config.json files still validate; the node ignores it and
+     * neither attestations nor challenges carry it any more (item 127).
+     */
+    stake?: string;
+    /** false (the default): the author of an anchor cannot attest it — the write is refused and such records never count toward the quorum. */
     allowSelfAttest: boolean;
     intervalMs: number;
     /** false = verify only on demand (`ainize patch verify` / POST /api/patches/:id/verify); no background rounds. Default true. */

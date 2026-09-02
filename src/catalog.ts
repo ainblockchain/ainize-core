@@ -15,8 +15,18 @@ export interface CatalogEntry {
   passed: number;
   /** Integrity-only (hash-only) attestations — shown, but never sufficient for LISTED when the patch declares benchmark samples. */
   integrity_checks: number;
+  /**
+   * Attestations written by the anchor's own author that were EXCLUDED from the counts above (the shipped
+   * `verifier.allowSelfAttest: false`). They stay in `attestations` — the record is permanent — but count for nothing.
+   * 0 on a node configured to allow self-attestation, where they were counted like any other.
+   */
+  self_checks: number;
   quorum: number;
   quorum_ok: boolean;
+  /** Quorum met AND nothing blocks the sale. CHALLENGED clears it — every buy gate reads this, not `quorum_ok`. */
+  sellable: boolean;
+  /** The challenge that is currently holding the sale (newest challenge written after the entry was listed). */
+  open_challenge?: Challenge;
   settlements: Settlement[];
   downloads: number;
   revenue: string;
@@ -28,6 +38,35 @@ export interface CatalogEntry {
   listed_at?: number;
 }
 
+const sameAddr = (a: string, b: string) => (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
+
+/**
+ * Which of one verifier's attestations counts for an entry.
+ *  - after a challenge: the newest attestation written after it (re-verification answers the challenge and replaces
+ *    the pre-challenge result — otherwise a challenged patch could never return to LISTED, since every verifier has
+ *    already attested it);
+ *  - otherwise: the first one, upgraded to the first attestation that actually executed the benchmark
+ *    (a real run beats an earlier hash-only check by the same node).
+ */
+export function effectiveAttestation(list: Attestation[], challengedAt = 0): Attestation {
+  if (challengedAt > 0) {
+    const after = list.filter((a) => a.created_at > challengedAt).sort((a, b) => b.created_at - a.created_at);
+    if (after.length) return after[0];
+  }
+  const first = list[0];
+  if (first.verified_on === 'hash-only') return list.find((a) => a.verified_on !== 'hash-only') ?? first;
+  return first;
+}
+
+/**
+ * How a verification count is written for a human: the numerator never exceeds the quorum (`3/2` is arithmetic no
+ * reader can interpret), and any attestations beyond it are reported as a separate, honest count.
+ */
+export function verificationCount(e: { passed: number; quorum: number }): { fraction: string; extra: number } {
+  const shown = Math.min(e.passed, e.quorum);
+  return { fraction: `${shown}/${e.quorum}`, extra: e.passed - shown };
+}
+
 export function deriveCatalog(
   anchors: LedgerRecord<PatchAnchor>[],
   attestations: LedgerRecord<Attestation>[],
@@ -36,6 +75,8 @@ export function deriveCatalog(
   supersedes: LedgerRecord<SupersedeRecord>[],
   quorum: number,
   localDrafts: PatchAnchor[] = [],
+  /** Dev/single-node setting (`verifier.allowSelfAttest`): when true, an author's attestation of its own anchor counts. Default false — the shipped behaviour. */
+  allowSelfAttest = false,
 ): CatalogEntry[] {
   const byId = new Map<string, CatalogEntry>();
   const seen = new Set<string>();
@@ -43,27 +84,28 @@ export function deriveCatalog(
     if (seen.has(rec.body.id)) continue;   // first anchor wins (immutable)
     seen.add(rec.body.id);
     byId.set(rec.body.id, {
-      anchor: rec.body, status: 'ANNOUNCED', attestations: [], passed: 0, integrity_checks: 0, quorum, quorum_ok: false,
+      anchor: rec.body, status: 'ANNOUNCED', attestations: [], passed: 0, integrity_checks: 0, self_checks: 0, quorum, quorum_ok: false, sellable: false,
       settlements: [], downloads: 0, revenue: '0', challenges: [], superseded_by: [], supersedes: [], children: [],
       record_hash: rec.hash,
     });
   }
   for (const d of localDrafts) {
     if (!byId.has(d.id)) byId.set(d.id, {
-      anchor: d, status: 'DRAFT', attestations: [], passed: 0, integrity_checks: 0, quorum, quorum_ok: false,
+      anchor: d, status: 'DRAFT', attestations: [], passed: 0, integrity_checks: 0, self_checks: 0, quorum, quorum_ok: false, sellable: false,
       settlements: [], downloads: 0, revenue: '0', challenges: [], superseded_by: [], supersedes: [], children: [], record_hash: '',
     });
   }
+  // Every attestation is kept per verifier here; which one of a verifier's attestations counts is decided below,
+  // once the challenges are known (a re-verification written after a challenge replaces the pre-challenge one).
+  const byVerifier = new Map<string, Map<string, Attestation[]>>();
   for (const rec of attestations) {
     const e = byId.get(rec.body.patch_id);
     if (!e) continue;
-    const idx = e.attestations.findIndex((a) => a.verifier === rec.body.verifier);
-    if (idx >= 0) {
-      // same verifier again: keep the stronger evidence (real benchmark beats hash-only), otherwise the first one
-      if (e.attestations[idx].verified_on === 'hash-only' && rec.body.verified_on !== 'hash-only') e.attestations[idx] = rec.body;
-      continue;
-    }
-    e.attestations.push(rec.body);
+    const per = byVerifier.get(rec.body.patch_id) ?? new Map<string, Attestation[]>();
+    const list = per.get(rec.body.verifier) ?? [];
+    list.push(rec.body);
+    per.set(rec.body.verifier, list);
+    byVerifier.set(rec.body.patch_id, per);
   }
   for (const rec of settlements) {
     const e = byId.get(rec.body.patch_id);
@@ -82,22 +124,31 @@ export function deriveCatalog(
   }
   for (const e of byId.values()) {
     for (const p of e.anchor.parents) byId.get(p)?.children.push(e.anchor.id);
+    const latestChallenge = e.challenges.sort((a, b) => b.created_at - a.created_at)[0];
+    e.attestations = [...(byVerifier.get(e.anchor.id) ?? new Map<string, Attestation[]>()).values()]
+      .map((list) => effectiveAttestation(list, latestChallenge?.created_at ?? 0));
     // A patch that ships benchmark samples must be *executed* by verifiers; hash-only checks are recorded but do not list it.
     const needsBenchmark = (e.anchor.benchmark.samples?.length ?? 0) > 0;
-    const executed = e.attestations.filter((a) => a.passed && (!needsBenchmark || a.verified_on !== 'hash-only'));
+    // An author attesting its own anchor is a self-check, never a verification: it is shown but excluded from every count
+    // that decides LISTED, so an attestation already on the chain stops counting the moment this node reads it.
+    const isSelf = (a: Attestation) => !allowSelfAttest && sameAddr(a.verifier, e.anchor.author);
+    const independent = e.attestations.filter((a) => !isSelf(a));
+    const executed = independent.filter((a) => a.passed && (!needsBenchmark || a.verified_on !== 'hash-only'));
     e.passed = executed.length;
-    e.integrity_checks = e.attestations.filter((a) => a.verified_on === 'hash-only').length;
+    e.integrity_checks = independent.filter((a) => a.verified_on === 'hash-only').length;
+    e.self_checks = e.attestations.length - independent.length;
     e.quorum_ok = e.passed >= quorum;
     e.downloads = e.settlements.length;
     e.revenue = e.settlements.reduce((s, x) => s + Number(x.amount || 0), 0).toFixed(6).replace(/\.?0+$/, '') || '0';
-    if (e.status === 'DRAFT') continue;
-    const failed = e.attestations.filter((a) => !a.passed && (!needsBenchmark || a.verified_on !== 'hash-only')).length;
-    const latestChallenge = e.challenges.sort((a, b) => b.created_at - a.created_at)[0];
+    if (e.status === 'DRAFT') { e.sellable = false; continue; }
+    const failed = independent.filter((a) => !a.passed && (!needsBenchmark || a.verified_on !== 'hash-only')).length;
     if (e.quorum_ok) {
       e.status = 'LISTED';
       e.listed_at = Math.max(...executed.map((a) => a.created_at));
-      if (latestChallenge && latestChallenge.created_at > (e.listed_at ?? 0)) e.status = 'CHALLENGED';
-      if (e.superseded_by.length) e.status = 'SUPERSEDED';
+      // A challenge written after the newest counted verification holds the entry until a verifier re-runs it
+      // (that re-verification is newer than the challenge, so it lands in `executed` and lifts the status again).
+      if (latestChallenge && latestChallenge.created_at > (e.listed_at ?? 0)) { e.status = 'CHALLENGED'; e.open_challenge = latestChallenge; }
+      if (e.superseded_by.length && e.status !== 'CHALLENGED') e.status = 'SUPERSEDED';
     } else if (failed >= quorum) {
       e.status = 'REJECTED';
     } else if (e.attestations.length > 0) {
@@ -105,6 +156,8 @@ export function deriveCatalog(
     } else {
       e.status = 'ANNOUNCED';
     }
+    // A disputed entry is not for sale at any price: the 402 gate, `patch buy` and the agent all read this flag.
+    e.sellable = e.quorum_ok && e.status !== 'CHALLENGED';
   }
   return [...byId.values()].sort((a, b) => b.anchor.created_at - a.anchor.created_at);
 }

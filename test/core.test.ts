@@ -5,11 +5,11 @@ import { dirname, join } from 'node:path';
 import { pythonJson, canonicalJson, sha256Hex } from '../src/canonical.js';
 import { createIdentity, signMessage, verifyMessage, hashPassword, verifyPassword } from '../src/identity.js';
 import { LocalLedger } from '../src/local-ledger.js';
-import { deriveCatalog, royaltySplit, sanitizeContributors, validateContributors, validatePrice, ValidationError } from '../src/catalog.js';
+import { deriveCatalog, royaltySplit, sanitizeContributors, validateContributors, validatePrice, ValidationError, verificationCount } from '../src/catalog.js';
 import { toAin, fromAin, withEmptyArrays, recordsFromMarketState } from '../src/ain-ledger.js';
 import { DEFAULT_TEACH_CONFIG, defaultConfig, loadConfig, saveConfig, teachConfig } from '../src/config.js';
 import { addressSet, intersectionCount, addressSketch, sketchJaccard } from '../src/npz.js';
-import type { PatchAnchor, Attestation, Contributor, LedgerRecord } from '../src/types.js';
+import type { PatchAnchor, Attestation, Challenge, Contributor, LedgerRecord } from '../src/types.js';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
@@ -88,6 +88,99 @@ test('catalog status machine and royalty split', () => {
   assert.equal(split['A'], '1.5');
 });
 
+// ---------------------------------------------------------------- trust rules (critique 2, items 146 / 153)
+const anchorRec = (id: string, author: string, samples = true): LedgerRecord<PatchAnchor> => ({
+  hash: id, kind: 'anchor', author, ts: 1, parents: [], sig: '',
+  body: { id, name: id, description: '', author, model: { id_M: 'M' }, patch_sha256: id, size_bytes: 1, rows: 1,
+    benchmark: { schema: 's', queries: 1, format: [], samples: samples ? [{ prompt: 'q', expect: 'a' }] : undefined },
+    benchmark_hash: 'h', price: '10', currency: 'CREDIT', billing: 'per_download', parents: [], parent_authors: [], topic_path: 't', created_at: 1 },
+});
+const attRec = (pid: string, v: string, at: number, opts: { passed?: boolean; on?: string } = {}): LedgerRecord<Attestation> => ({
+  hash: `${pid}:${v}:${at}`, kind: 'attest', author: v, ts: at, parents: [], sig: '',
+  body: { patch_id: pid, verifier: v, patch_sha256: pid, benchmark_hash: 'h', score: {}, passed: opts.passed ?? true, verified_on: opts.on ?? 'vllm:M', sig: '', created_at: at },
+});
+const chRec = (pid: string, by: string, at: number, reason = 'answers are wrong'): LedgerRecord<Challenge> => ({
+  hash: `${pid}:ch:${at}`, kind: 'challenge', author: by, ts: at, parents: [], sig: '',
+  body: { patch_id: pid, challenger: by, reason, created_at: at },
+});
+
+test('item 146: an author attesting its own anchor is a self-check — never counted, never listed by it', () => {
+  const one = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'A', 10), attRec('p', 'v1', 11)], [], [], [], 2)[0];
+  assert.equal(one.passed, 1);              // only v1 counts
+  assert.equal(one.self_checks, 1);
+  assert.equal(one.status, 'VERIFYING');
+  assert.equal(one.quorum_ok, false);
+  assert.equal(one.sellable, false);
+  // the record is still shown (it is on the ledger for ever) — it just does not count
+  assert.equal(one.attestations.length, 2);
+  // address comparison is case-insensitive: 0xABC… by the author of 0xabc… is still a self-check
+  const mixed = deriveCatalog([anchorRec('p', '0xabc')], [attRec('p', '0xABC', 10), attRec('p', 'v1', 11), attRec('p', 'v2', 12)], [], [], [], 2)[0];
+  assert.equal(mixed.self_checks, 1);
+  assert.equal(mixed.passed, 2);
+  assert.equal(mixed.status, 'LISTED');
+  // a node that deliberately turns the guard off (single-node dev config) counts them, and reports 0 excluded
+  const dev = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'A', 10), attRec('p', 'v1', 11)], [], [], [], 2, [], true)[0];
+  assert.equal(dev.passed, 2);
+  assert.equal(dev.self_checks, 0);
+  assert.equal(dev.status, 'LISTED');
+});
+
+test('item 146: the displayed fraction never exceeds the quorum, and the extra attestations are reported separately', () => {
+  const three = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11), attRec('p', 'v3', 12)], [], [], [], 2)[0];
+  assert.equal(three.passed, 3);
+  assert.deepEqual(verificationCount(three), { fraction: '2/2', extra: 1 });
+  assert.deepEqual(verificationCount({ passed: 1, quorum: 2 }), { fraction: '1/2', extra: 0 });
+});
+
+test('item 153: a challenge holds the sale (sellable false) and names itself; re-verification lifts it', () => {
+  const anchors = [anchorRec('p', 'A')];
+  const atts = [attRec('p', 'v1', 10), attRec('p', 'v2', 11)];
+  const listed = deriveCatalog(anchors, atts, [], [], [], 2)[0];
+  assert.equal(listed.status, 'LISTED');
+  assert.equal(listed.sellable, true);
+
+  const challenged = deriveCatalog(anchors, atts, [], [chRec('p', 'v3', 20)], [], 2)[0];
+  assert.equal(challenged.status, 'CHALLENGED');
+  assert.equal(challenged.quorum_ok, true);          // the quorum is still met — what changed is that it is disputed
+  assert.equal(challenged.sellable, false);
+  assert.equal(challenged.open_challenge?.challenger, 'v3');
+  assert.equal(challenged.open_challenge?.reason, 'answers are wrong');
+
+  // a verifier that had already attested re-runs it: the newer attestation replaces the older one and re-lists the patch
+  const cleared = deriveCatalog(anchors, [...atts, attRec('p', 'v1', 30), attRec('p', 'v2', 31)], [], [chRec('p', 'v3', 20)], [], 2)[0];
+  assert.equal(cleared.status, 'LISTED');
+  assert.equal(cleared.sellable, true);
+  assert.equal(cleared.passed, 2);
+  assert.equal(cleared.attestations.length, 2);       // still one attestation per verifier
+  assert.equal(cleared.open_challenge, undefined);
+
+  // and a re-verification that FAILS takes the listing down instead of leaving the stale PASS in place
+  const failed = deriveCatalog(anchors, [...atts, attRec('p', 'v1', 30, { passed: false }), attRec('p', 'v2', 31, { passed: false })], [], [chRec('p', 'v3', 20)], [], 2)[0];
+  assert.equal(failed.status, 'REJECTED');
+  assert.equal(failed.passed, 0);
+  assert.equal(failed.sellable, false);
+});
+
+test('item 153: outside a challenge the first attestation of a verifier still stands, upgraded from hash-only', () => {
+  const anchors = [anchorRec('p', 'A')];
+  // a second attestation by the same verifier with no challenge in between is ignored (history is not rewritten)
+  const e = deriveCatalog(anchors, [attRec('p', 'v1', 10), attRec('p', 'v1', 40, { passed: false })], [], [], [], 1)[0];
+  assert.equal(e.attestations.length, 1);
+  assert.equal(e.attestations[0].created_at, 10);
+  assert.equal(e.status, 'LISTED');
+  // hash-only → executed by the same verifier is still an upgrade
+  const up = deriveCatalog(anchors, [attRec('p', 'v1', 10, { on: 'hash-only' }), attRec('p', 'v1', 20)], [], [], [], 1)[0];
+  assert.equal(up.attestations[0].verified_on, 'vllm:M');
+  assert.equal(up.passed, 1);
+  assert.equal(up.integrity_checks, 0);
+});
+
+test('item 127: nothing on a fresh attestation or challenge claims a deposit', () => {
+  const e = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10)], [], [chRec('p', 'v2', 20)], [], 1)[0];
+  assert.equal(e.attestations[0].stake, undefined);
+  assert.equal(e.challenges[0].stake, undefined);
+});
+
 test('address set intersection and sketch', () => {
   const a = addressSet(BigInt64Array.from([5n, 1n, 3n, 3n, 9n]));
   const b = addressSet(BigInt64Array.from([3n, 9n, 11n]));
@@ -103,7 +196,7 @@ const mkEntry = (id: string, parents: string[], author: string, contributors?: C
   anchor: { id, name: id, description: '', author, model: { id_M: 'M' }, patch_sha256: id, size_bytes: 1, rows: 1,
     benchmark: { schema: 's', queries: 1, format: [] }, benchmark_hash: 'h', price: '10', currency: 'CREDIT' as const, billing: 'per_download' as const,
     parents, parent_authors: [], topic_path: 't', created_at: 1, contributors } as PatchAnchor,
-  status: 'LISTED' as const, attestations: [], passed: 2, integrity_checks: 0, quorum: 2, quorum_ok: true, settlements: [], downloads: 0, revenue: '0',
+  status: 'LISTED' as const, attestations: [], passed: 2, integrity_checks: 0, self_checks: 0, quorum: 2, quorum_ok: true, sellable: true, settlements: [], downloads: 0, revenue: '0',
   challenges: [], superseded_by: [], supersedes: [], children: [], record_hash: '',
 });
 const teacher = (address: string, share: number): Contributor => ({ address, share, role: 'data_provider', proof: 'signed', sig: 'x' });
