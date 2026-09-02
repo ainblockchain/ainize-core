@@ -454,7 +454,7 @@ export class AinLedger implements Ledger {
     const errors: string[] = [];
     try {
       const rule = await this.ain.db.ref(`${MARKET}/attestations`).getRule();
-      if (!rule) errors.push('market rules not set (run `ngram chain setup`)');
+      if (!rule) errors.push('market rules not set (run `ainize chain setup`)');
     } catch (e) { errors.push(`chain unreachable: ${(e as Error).message}`); }
     return { valid: errors.length === 0, checked: this.cache.length, errors };
   }
