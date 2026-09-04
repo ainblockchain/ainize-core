@@ -12,7 +12,8 @@ import assert from 'node:assert/strict';
 import {
   accessRank, answersHash, bf16Bits, capBenchmarkSamples, deltaOnlyParent, fromAin, licenseCompatible, lineageIds,
   lineageProblems, merkleRoot, preStateSha256, sha256Hex, TEACH_SAMPLES_ON_CHAIN, toAin, withEmptyArrays,
-  type BenchmarkSample, type PatchAnchor,
+  royaltyPlan, royaltySplit,
+  type BenchmarkSample, type CatalogEntry, type Contributor, type PatchAnchor,
 } from '../src/index.js';
 
 const sample = (i: number): BenchmarkSample => ({ prompt: `Q: q${i}\nA: `, expect: `a${i}` });
@@ -155,4 +156,56 @@ test('AIN round-trip: derivation.bases, base.stack and dataset.parents survive t
   assert.equal(legacy.derivation, undefined);
   assert.equal(legacy.base, undefined);
   assert.equal(legacy.dataset, undefined);
+});
+
+// ---------------------------------------------------------------- §11 royalties along a two-parent lineage
+/**
+ * A merge is the case the royalty rule exists for: two lines of creators, one sale. §11's worked examples 1–8 are
+ * checked in `core.test.ts`; what is checked here is the shape a merge actually publishes — `kind: 'merge'` with two
+ * parents, each of them a taught anchor whose own teacher is credited — and that both lines are paid, once, with the
+ * sale summing exactly to the price.
+ *
+ * Scenario AZ-307 (docs/ux-test-scenarios.json).
+ */
+const entryOf = (id: string, parents: string[], author: string, contributors?: Contributor[]): CatalogEntry => ({
+  anchor: {
+    id, name: id, description: '', author, model: { id_M: 'M' }, patch_sha256: id.padEnd(64, '0'), size_bytes: 1, rows: 1,
+    benchmark: { schema: `taught/${id}`, queries: 1, format: [] }, benchmark_hash: 'h', price: '10', currency: 'CREDIT',
+    parents, parent_authors: [], topic_path: 't', created_at: 1, origin: 'teach', ...(contributors ? { contributors } : {}),
+  } as PatchAnchor,
+  status: 'LISTED', attestations: [], passed: 2, integrity_checks: 0, self_checks: 0, quorum: 2, quorum_ok: true, sellable: true,
+  settlements: [], downloads: 0, revenue: '0', challenges: [], challenge_log: [], verifiers: [], executors: [], executors_unknown: 0,
+  no_baseline: 0, superseded_by: [], supersedes: [], children: [], record_hash: '',
+} as unknown as CatalogEntry);
+const provider = (address: string, share: number): Contributor => ({ address, share, role: 'data_provider', proof: 'signed', sig: 'x' });
+
+test('AZ-307 a sale of a combined knowledge pays BOTH lines, each once, and adds up to the price (§11 example 3, on a real merge anchor)', () => {
+  const TA = '0x' + 'a'.repeat(40); const TB = '0x' + 'b'.repeat(40);
+  // two taught knowledges, each published by its own node with its own teacher credited
+  const A = entryOf('A', [], 'node-a', [provider(TA, 0.7)]);
+  const B = entryOf('B', [], 'node-b', [provider(TB, 0.7)]);
+  const M = entryOf('M', ['A', 'B'], 'node-m');
+  M.anchor.derivation = {
+    kind: 'merge', tier: 'union', policy: 'manual',
+    bases: [{ patch_id: 'A', patch_sha256: A.anchor.patch_sha256, rows: 3 }, { patch_id: 'B', patch_sha256: B.anchor.patch_sha256, rows: 2 }],
+    added_rows: 0, changed_rows: 1, removed_rows: 0,
+  };
+  const all = new Map([['A', A], ['B', B], ['M', M]]);
+  assert.deepEqual(lineageProblems(M.anchor), [], 'both merge parents are declared parents, so nothing is inherited without paying for it');
+
+  const plan = royaltyPlan(M, all, 10, 0.3);
+  const paid = plan.royalty;
+  const sum = Object.values(paid).reduce((a, b) => a + Number(b), 0);
+  assert.equal(Math.round(sum * 1e6) / 1e6, 10, 'Σ payouts = the price');
+  // pool 3, split equally between the two ancestor lines → 1.5 each; each line's slice is shared with its teacher (0.7)
+  assert.equal(paid[TA], '1.05'); assert.equal(paid['node-a'], '0.45');
+  assert.equal(paid[TB], '1.05'); assert.equal(paid['node-b'], '0.45');
+  assert.equal(paid['node-m'], '7', 'the creator of the combined knowledge keeps the seller side');
+
+  // and the same sale with one of the two lines missing from this node still pays it, from `parent_authors`
+  const partial = new Map([['A', A], ['M', M]]);
+  M.anchor.parent_authors = ['', 'node-b'];
+  const away = royaltySplit(M, partial, 10, 0.3);
+  assert.equal(Math.round(Object.values(away).reduce((a, b) => a + Number(b), 0) * 1e6) / 1e6, 10);
+  assert.equal(away['node-b'], '1.5', 'a parent this node cannot resolve is still paid to the author its anchor names');
 });
