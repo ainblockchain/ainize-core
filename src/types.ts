@@ -642,6 +642,13 @@ export interface TeachDatasetRow {
   advisory?: 'shared_ending'[];
   /** Only with `status: 'pii'` — what was found (the row still trains; it blocks publishing above `private`). */
   pii?: TeachPiiKind[];
+  /**
+   * Provenance of an inherited question (lineage design §5.2): `from = '<parent knowledge>#<row index>'` on a row
+   * copied unchanged from the training set this one was forked from, `replaces` on a row whose answer was changed.
+   * The rows table renders them as the *from {name}* chip and the Mine / Inherited / Changed filters.
+   */
+  from?: string;
+  replaces?: string;
   /** e.g. 'conflicts with line 41', 'answer is 240 characters (40 over the 200 limit)' */
   detail?: string;
   /** ≤ 200 chars, only for not_parsed. */
