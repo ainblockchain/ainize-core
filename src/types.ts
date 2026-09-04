@@ -5,7 +5,8 @@
  *  - Patch (지식 패치): rows (addr, before, after) of an n-gram conditional-memory table + model identity.
  *  - Benchmark (벤치마크): queries/answers + collateral bound used to machine-verify a patch.
  *  - Anchor / Attest / Settle: ledger record kinds (등록·증명·정산 블록).
- *  - Publish state machine: DRAFT → ANNOUNCED → VERIFYING → LISTED | REJECTED, LISTED → CHALLENGED → VERIFYING.
+ *  - Publish state machine: DRAFT → ANNOUNCED → VERIFYING → LISTED | REJECTED, LISTED → CHALLENGED → VERIFYING,
+ *    and any announced state → RETIRED when the author writes a `retire` record (the record stays; the sale stops).
  */
 
 export type PatchStatus =
@@ -15,10 +16,12 @@ export type PatchStatus =
   | 'LISTED'
   | 'REJECTED'
   | 'CHALLENGED'
-  | 'SUPERSEDED';
+  | 'SUPERSEDED'
+  /** The author appended a `retire` record: the anchor stays on the permanent record, the knowledge stops being sold. */
+  | 'RETIRED';
 
 export const PATCH_STATUSES: PatchStatus[] = [
-  'DRAFT', 'ANNOUNCED', 'VERIFYING', 'LISTED', 'REJECTED', 'CHALLENGED', 'SUPERSEDED',
+  'DRAFT', 'ANNOUNCED', 'VERIFYING', 'LISTED', 'REJECTED', 'CHALLENGED', 'SUPERSEDED', 'RETIRED',
 ];
 
 /** Billing model for a patch (청구항 12). */
@@ -83,6 +86,45 @@ export interface Contributor {
 /** Maximum number of contributors carried on one anchor (the knowledge app lives on the AIN free tier, ~100 KB state). */
 export const MAX_CONTRIBUTORS = 4;
 
+/**
+ * The floor under `PatchAnchor.royalty_share` (item 191). Every public surface of this product promises the original
+ * creators 30 % of each sale; before this constant that promise was `market.royaltyShare` on the node doing the
+ * SELLING, so a derivative's seller could set it to 0 and keep the base creator's share while her page still said
+ * 30 %. A seller may promise MORE (config, or a parent that already promised more); it may never promise less.
+ */
+export const NETWORK_MIN_ROYALTY_SHARE = 0.3;
+/**
+ * The floor under `PatchAnchor.verifier_share` (item 325): the fraction of the seller's side of each sale that is
+ * divided equally among the attestations that count toward the knowledge's quorum. Verification is a GPU minute and
+ * a gigabyte of someone else's body per item; before this it earned nothing anywhere in the product.
+ */
+export const NETWORK_MIN_VERIFIER_SHARE = 0.05;
+/** Hard ceiling on the verification fee, whatever a config or a peer-written anchor claims. */
+export const MAX_VERIFIER_SHARE = 0.5;
+/** How many wrong answers one attestation carries back to the author (item 155). */
+export const ATTESTATION_MAX_FAILURES = 5;
+/** Truncation for the prompt / expected / actual strings in `Attestation.failures` (item 155). */
+export const ATTESTATION_PROMPT_MAX = 200;
+export const ATTESTATION_GOT_MAX = 120;
+/** A challenge takes a knowledge off sale everywhere: it has to say why, in at least this many characters (item 328). */
+export const CHALLENGE_MIN_REASON = 20;
+/**
+ * How long one address's challenge holds a knowledge before the same address may file another on it (item 328). A
+ * challenge is free and stops every sale, so without this one node could keep a rival off sale for ever by re-filing.
+ */
+export const CHALLENGE_COOLDOWN_MS = 24 * 3600_000;
+
+/** Effective lineage share for one sale: what the ANCHOR promised, floored at the network minimum (item 191). */
+export function effectiveRoyaltyShare(anchor: { royalty_share?: number } | undefined, configured = NETWORK_MIN_ROYALTY_SHARE): number {
+  const declared = typeof anchor?.royalty_share === 'number' && Number.isFinite(anchor.royalty_share) ? anchor.royalty_share : configured;
+  return Math.min(1, Math.max(NETWORK_MIN_ROYALTY_SHARE, Number.isFinite(declared) ? declared : NETWORK_MIN_ROYALTY_SHARE));
+}
+/** Effective verification share for one sale: what the ANCHOR promised, floored at the network minimum (item 325). */
+export function effectiveVerifierShare(anchor: { verifier_share?: number } | undefined, configured = NETWORK_MIN_VERIFIER_SHARE): number {
+  const declared = typeof anchor?.verifier_share === 'number' && Number.isFinite(anchor.verifier_share) ? anchor.verifier_share : configured;
+  return Math.min(MAX_VERIFIER_SHARE, Math.max(NETWORK_MIN_VERIFIER_SHARE, Number.isFinite(declared) ? declared : NETWORK_MIN_VERIFIER_SHARE));
+}
+
 /** Where an anchor came from: registered by the operator (default when absent) or taught by a visitor. */
 export type PatchOrigin = 'operator' | 'teach';
 
@@ -128,6 +170,21 @@ export interface PatchAnchor {
   addr_sketch?: number[];
   /** Deposit / bond for verification (청구항 19). */
   bond?: string;
+  /**
+   * The lineage share this knowledge promises its ancestors: the fraction of every sale that is divided among the
+   * authors it was built on (item 191). Written into the anchor at createDraft — never read from the SELLING node's
+   * config, which the seller controls — as `max(NETWORK_MIN_ROYALTY_SHARE, this node's market.royaltyShare, every
+   * parent anchor's declared share)`, so a derivative can raise what its parents promised but never lower it.
+   * Absent on anchors written before the field: readers fall back to `max(NETWORK_MIN_ROYALTY_SHARE, config)`.
+   */
+  royalty_share?: number;
+  /**
+   * The verification share this knowledge promises the verifiers that attested it: the fraction of the seller's side
+   * of every sale divided equally among the attestations that count toward its quorum (item 325). Same rule as
+   * `royalty_share`: written at createDraft, floored at NETWORK_MIN_VERIFIER_SHARE, never taken from the seller's
+   * config at settle time.
+   */
+  verifier_share?: number;
   /** 'test' anchors (e2e suites on a shared dev chain) are hidden from catalogs unless explicitly requested. */
   visibility?: 'public' | 'test';
   /** Data providers credited (and paid) for this patch — ≤ MAX_CONTRIBUTORS entries; absent on operator-registered anchors. */
@@ -228,6 +285,26 @@ export interface Attestation {
   /** Restart-aware verification: number of reversions detected & re-applied (청구항 2(d)). */
   restarts_detected?: number;
   /**
+   * Up to ATTESTATION_MAX_FAILURES benchmark questions this run got WRONG, with what the model actually answered
+   * (item 155). Signed with the rest of the body: a FAIL that says only "0/2" gives the author nothing to fix, and
+   * the evidence existed — it was in the verifier's private event log and was thrown away on the way to the record.
+   * `got` is truncated to ATTESTATION_GOT_MAX chars; absent on hash-only attestations and on every record written
+   * before the field.
+   */
+  failures?: { prompt: string; expect: string; got: string }[];
+  /**
+   * Which model server executed this benchmark (item 329). `instance` is a 16-hex fingerprint of the engine — its
+   * API origin, the served model id, and the engine's own start time when it reports one — so two verifier processes
+   * sharing ONE vLLM produce the SAME instance and the catalog can say "2 attestations, 1 model server" instead of
+   * "2 independent verifiers". Absent on hash-only attestations (nothing executed) and on pre-field records.
+   */
+  executor?: { api: string | null; model: string | null; engine_started?: number; instance: string };
+  /**
+   * false when this node already had the knowledge applied to the shared model, so the run had no un-patched
+   * baseline of its own (item 329). Such an attestation is recorded but never counted toward a quorum.
+   */
+  baseline?: boolean;
+  /**
    * @deprecated Historical field. Builds up to 2026-09 copied `verifier.stake` in here and the UI called it a
    * "deposit the verifier loses if it verified wrongly" — nothing was ever escrowed, transferred or slashed
    * (item 127). New attestations omit it; readers must not present it as money at risk.
@@ -246,6 +323,12 @@ export interface Settlement {
   scheme: string;            // 'ain-transfer' | 'local-credit'
   tx_hash: string;           // AIN tx hash or local proof id
   royalty: Record<string, string>;   // address → amount
+  /**
+   * Lineage the seller's node could not resolve when it priced this sale (item 310): parent id → the amount that
+   * ancestor's author was owed. The money is NOT in `royalty` and was NOT kept by the seller — the sale says out
+   * loud that a share of it has no payee yet, instead of silently paying the seller 100 %.
+   */
+  royalty_unresolved?: Record<string, string>;
   billing: BillingModel;
   created_at: number;
 }
@@ -253,6 +336,7 @@ export interface Settlement {
 export interface Challenge {
   patch_id: string;
   challenger: string;
+  /** Why the challenger thinks the benchmark no longer holds — at least CHALLENGE_MIN_REASON chars (item 328). */
   reason: string;
   /** @deprecated Historical field — see `Attestation.stake`. Nothing is escrowed; new challenges omit it. */
   stake?: string;
@@ -295,7 +379,7 @@ export type NodeRole = 'seller' | 'verifier' | 'serving' | 'gateway';
 
 /** Generic signed ledger record (local-ledger mode). Content-addressed by `hash`. */
 /** Every kind of record the ledger holds — the closed list `ainize ledger ls --kind` offers. */
-export const RECORD_KINDS = ['anchor', 'attest', 'settle', 'challenge', 'branch', 'node', 'supersede', 'subscribe'] as const;
+export const RECORD_KINDS = ['anchor', 'attest', 'settle', 'challenge', 'branch', 'node', 'supersede', 'subscribe', 'retire'] as const;
 export type RecordKind = (typeof RECORD_KINDS)[number];
 
 export interface LedgerRecord<T = unknown> {
@@ -307,6 +391,24 @@ export interface LedgerRecord<T = unknown> {
   /** Hashes of records this one causally depends on (DAG). */
   parents: string[];
   sig: string;                // ain-util ecSignMessage(hash) by author
+}
+
+/**
+ * One knowledge the buyer must ALSO hold for the quoted one to work (lineage design §12.5): an add-on trained on
+ * top of a base is useless without that base underneath, and its price is not part of the quoted price. Deepest
+ * ancestor first — the order they have to be loaded in.
+ */
+export interface X402Required {
+  id: string;
+  name: string;
+  price: string;
+  currency: string;
+  author: string;
+  author_name?: string | null;
+  /** where that one is sold (its own anchor's gateway), when this node knows it */
+  gateway_url?: string | null;
+  /** how far below the quoted knowledge it sits (1 = its own base) */
+  depth: number;
 }
 
 export interface X402Requirement {
@@ -321,6 +423,14 @@ export interface X402Requirement {
   expires_at: number;
   /** For ain-transfer: the transfer key the payer must use so the seller can look up /transfer/$from/$to/$key. */
   transfer_key?: string;
+  /** The bases this knowledge needs underneath it, deepest first — each one a separate purchase (finding 270). */
+  requires?: X402Required[];
+  /** `maxAmountRequired` + every `requires[]` price: what the whole family costs at list price. */
+  total?: string;
+  /** true when this body stands alone (no base stack, or a squash that carries its bases' rows). */
+  self_contained?: boolean;
+  /** The nonce is spent by the settlement that redeems it; a rejected attempt leaves it usable (finding 272). */
+  single_use?: boolean;
 }
 
 export interface X402Payload {
@@ -448,6 +558,12 @@ export interface NodeConfig {
     defaultPrice: string;
     royaltyShare: number;      // share of price distributed to lineage parents (0..1)
     initialCredit: string;     // local-credit wallet seed for new accounts
+    /**
+     * How many addresses this node will ever hand `initialCredit` to (default 100). Local credit is issued by the
+     * node, not owned by the buyer: without a cap a fresh keypair is worth 100 CREDIT and any spend limit is one
+     * `ainize keys new` away (item 364). Every grant is recorded; past the cap a new address gets nothing.
+     */
+    creditGrants?: number;
   };
   /**
    * HTTP server knobs. `trustProxy` is Express's `trust proxy` setting: `false` (default) → `req.ip` is the TCP peer, so a
@@ -613,6 +729,12 @@ export interface TeachDatasetSummary {
    */
   pii?: number;
   langs: Record<TeachDatasetLang, number>;
+  /**
+   * How many report entries were carried over from an earlier revision (rows refused when the file was read that the
+   * last edit did not resolve). They are already counted in `rejected` and in their own bucket; this says how many of
+   * those numbers are about the original file rather than the current bytes. Absent before the carry rule existed.
+   */
+  carried?: number;
 }
 
 export type TeachDatasetLang = 'hangul' | 'latin' | 'han' | 'kana' | 'other';
@@ -655,6 +777,13 @@ export interface TeachDatasetRow {
   replaces?: string;
   /** e.g. 'conflicts with line 41', 'answer is 240 characters (40 over the 200 limit)' */
   detail?: string;
+  /**
+   * A refused row CARRIED FORWARD from an earlier revision of this dataset (design §11). An edit rewrites the set from
+   * its accepted rows, so a row the parser refused when the file was read is not in the new bytes; it is kept in the
+   * report anyway, because "nothing is silently dropped" has to hold across revisions too. `line` is still its line in
+   * the file that was uploaded — never a position in the current set — which is why the table labels it differently.
+   */
+  carried?: true;
   /** ≤ 200 chars, only for not_parsed. */
   raw?: string;
   lang?: TeachDatasetLang;

@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { pythonJson, canonicalJson, sha256Hex } from '../src/canonical.js';
 import { createIdentity, signMessage, verifyMessage, hashPassword, verifyPassword } from '../src/identity.js';
 import { LocalLedger } from '../src/local-ledger.js';
-import { deriveCatalog, royaltySplit, sanitizeContributors, validateContributors, validatePrice, ValidationError, verificationCount } from '../src/catalog.js';
+import { deriveCatalog, royaltyPlan, royaltySplit, sanitizeContributors, validateContributors, validatePrice, ValidationError, verificationCount } from '../src/catalog.js';
 import { toAin, fromAin, withEmptyArrays, recordsFromMarketState } from '../src/ain-ledger.js';
 import { DEFAULT_TEACH_CONFIG, defaultConfig, loadConfig, saveConfig, teachConfig } from '../src/config.js';
 import { addressSet, intersectionCount, addressSketch, sketchJaccard } from '../src/npz.js';
@@ -197,7 +197,7 @@ const mkEntry = (id: string, parents: string[], author: string, contributors?: C
     benchmark: { schema: 's', queries: 1, format: [] }, benchmark_hash: 'h', price: '10', currency: 'CREDIT' as const, billing: 'per_download' as const,
     parents, parent_authors: [], topic_path: 't', created_at: 1, contributors } as PatchAnchor,
   status: 'LISTED' as const, attestations: [], passed: 2, integrity_checks: 0, self_checks: 0, quorum: 2, quorum_ok: true, sellable: true, settlements: [], downloads: 0, revenue: '0',
-  challenges: [], superseded_by: [], supersedes: [], children: [], record_hash: '',
+  challenges: [], challenge_log: [], verifiers: [] as string[], executors: [], executors_unknown: 0, no_baseline: 0, superseded_by: [], supersedes: [], children: [], record_hash: '',
 });
 const teacher = (address: string, share: number): Contributor => ({ address, share, role: 'data_provider', proof: 'signed', sig: 'x' });
 
@@ -374,4 +374,131 @@ test('AIN market state → records: supersede/subscribe values without created_a
   const orphan = recordsFromMarketState({ supersedes: { a: { zz: { old_patch_id: 'a', new_patch_id: 'zz', overlap_rows: 1, reason: 'r' } } } });
   assert.equal(orphan.length, 1); assert.equal(orphan[0].ts, 0);
   assert.deepEqual(recordsFromMarketState(market).map((r) => r.hash), fresh.map((r) => r.hash));
+});
+
+// ---------------------------------------------------------------- the chain rule and the money it moves (critique 3 items 191/192, critique 4 items 309/310/325)
+test('item 192: a 20-day version chain by one baker no longer halves the base creator, and no ancestor falls off a depth cut', () => {
+  // alice publishes A; the baker bakes day 1..20, each on yesterday's version AND on A.
+  const A = mkEntry('A', [], 'alice');
+  const m = new Map([['A', A]]);
+  let prev = 'A';
+  for (let d = 1; d <= 20; d++) {
+    const id = `day${d}`;
+    m.set(id, mkEntry(id, d === 1 ? ['A'] : [prev], 'baker'));
+    prev = id;
+  }
+  // day 2 (the old code paid alice 1.5 of 10 from here on) and day 20 (the old depth-16 cut paid her nothing)
+  assert.deepEqual(royaltySplit(m.get('day2')!, m, 10, 0.3), { alice: '3', baker: '7' });
+  assert.deepEqual(royaltySplit(m.get('day20')!, m, 10, 0.3), { alice: '3', baker: '7' });
+  // an outside creator joining at day 10 halves the pool with alice — two outside authors, not "alice plus 9 bakes"
+  m.set('outside', mkEntry('outside', [], 'carol'));
+  m.set('day21', mkEntry('day21', ['day20', 'outside'], 'baker'));
+  assert.deepEqual(royaltySplit(m.get('day21')!, m, 10, 0.3), { alice: '1.5', carol: '1.5', baker: '7' });
+});
+
+test('item 192: a data provider credited on the seller\'s own earlier version keeps her share of the seller side', () => {
+  const v1 = mkEntry('v1', [], 'node', [teacher(TEACHER, 0.5)]);
+  const v2 = mkEntry('v2', ['v1'], 'node');
+  const m = new Map([['v1', v1], ['v2', v2]]);
+  // no outside ancestor → no pool; the provider on the seller's own parent still takes 0.5 of the seller side
+  assert.deepEqual(royaltySplit(v2, m, 10, 0.3), { [TEACHER]: '5', node: '5' });
+  // and she is paid once, at her largest share, when she is credited on both anchors
+  const v2b = mkEntry('v2b', ['v1'], 'node', [teacher(TEACHER, 0.7)]);
+  assert.deepEqual(royaltySplit(v2b, new Map([['v1', v1], ['v2b', v2b]]), 10, 0.3), { [TEACHER]: '7', node: '3' });
+});
+
+test('item 309: one address in two spellings is one payee, summed under the first spelling', () => {
+  const MIXED = '0x538b' + 'C'.repeat(32) + 'Ee43';
+  const parent = mkEntry('parent', [], MIXED);
+  const child = mkEntry('child', ['parent'], 'node', [teacher(MIXED.toLowerCase(), 0.5)]);
+  const split = royaltySplit(child, new Map([['parent', parent], ['child', child]]), 10, 0.3);
+  assert.deepEqual(Object.keys(split).sort(), [MIXED, 'node'].sort());
+  assert.equal(split[MIXED], '6.5');   // 3 as the ancestor author + 3.5 as the data provider
+  assert.equal(split.node, '3.5');
+});
+
+test('item 310: an unresolved ancestor is paid through parent_authors, or held back on the record — never folded into the seller', () => {
+  const child = { ...mkEntry('child', ['gone'], 'node') };
+  child.anchor = { ...child.anchor, parents: ['gone'], parent_authors: ['0xANCESTOR'] };
+  const named = royaltyPlan(child, new Map([['child', child]]), 10, 0.3);
+  assert.deepEqual(named.royalty, { '0xANCESTOR': '3', node: '7' });
+  assert.deepEqual(named.unresolved, {});
+  const anon = { ...mkEntry('anon', ['gone'], 'node') };
+  const plan = royaltyPlan(anon, new Map([['anon', anon]]), 10, 0.3);
+  assert.deepEqual(plan.royalty, { node: '7' }, 'the seller does NOT keep the unresolved ancestor\'s share');
+  assert.deepEqual(plan.unresolved, { gone: '3' });
+});
+
+test('item 325: the attestations that count are paid the verification share out of the seller side', () => {
+  const e = mkEntry('k', [], 'node');
+  e.verifiers = ['v1', 'v2'];
+  const plan = royaltyPlan(e, new Map([['k', e]]), 10, 0.3);
+  assert.equal(plan.verifier_share, 0.05);
+  assert.deepEqual(plan.verification, { v1: '0.25', v2: '0.25' });
+  assert.deepEqual(plan.royalty, { v1: '0.25', v2: '0.25', node: '9.5' });
+  // with a lineage pool the fee is a fraction of the seller side, and a data provider is paid out of what is left
+  const parent = mkEntry('p', [], 'alice');
+  const child = mkEntry('c', ['p'], 'node', [teacher(TEACHER, 0.5)]);
+  child.verifiers = ['v1'];
+  const p2 = royaltyPlan(child, new Map([['p', parent], ['c', child]]), 10, 0.3);
+  assert.deepEqual(p2.royalty, { alice: '3', v1: '0.35', [TEACHER]: '3.325', node: '3.325' });
+  assert.equal(Object.values(p2.royalty).reduce((a, b) => a + Number(b), 0), 10);
+  // the seller can never pay itself the verification fee
+  const self = mkEntry('s', [], 'node');
+  self.verifiers = ['node'];
+  assert.deepEqual(royaltyPlan(self, new Map([['s', self]]), 10, 0.3).verification, {});
+});
+
+test('item 191: the lineage share is the ANCHOR\'s promise, floored at the network minimum — not the seller\'s config', () => {
+  const parent = mkEntry('p', [], 'alice');
+  const child = mkEntry('c', ['p'], 'bob');
+  const m = new Map([['p', parent], ['c', child]]);
+  // bob sets market.royaltyShare 0 → alice still gets the network minimum
+  assert.deepEqual(royaltySplit(child, m, 10, 0), { alice: '3', bob: '7' });
+  // the anchor promised more than the floor → the promise on the record wins
+  child.anchor = { ...child.anchor, royalty_share: 0.5 };
+  assert.deepEqual(royaltySplit(child, m, 10, 0), { alice: '5', bob: '5' });
+  // a hostile anchor promising less than the floor is raised to it
+  child.anchor = { ...child.anchor, royalty_share: 0 };
+  assert.deepEqual(royaltySplit(child, m, 10, 0.3), { alice: '3', bob: '7' });
+});
+
+test('item 242: a challenge on a VERIFYING entry is open (so verifiers re-run it), and every challenge records its outcome', () => {
+  // one PASS, one FAIL → VERIFYING at quorum 2; the publisher challenges to get a re-run
+  const cat = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11, { passed: false })], [], [chRec('p', 'A', 20, 'the second verifier ran on the wrong model')], [], 2);
+  const e = cat[0];
+  assert.equal(e.status, 'VERIFYING');
+  assert.equal(e.open_challenge?.created_at, 20, 'a non-listed entry can carry an open challenge');
+  assert.equal(e.challenge_log[0].state, 'open');
+  // a re-run after the challenge answers it: dismissed when it passes, upheld when it fails
+  const answered = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11, { passed: false }), attRec('p', 'v2', 30)], [], [chRec('p', 'A', 20, 'the second verifier ran on the wrong model')], [], 2)[0];
+  assert.equal(answered.open_challenge, undefined);
+  assert.equal(answered.challenge_log[0].state, 'dismissed');
+  assert.equal(answered.status, 'LISTED');
+  const upheld = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 30, { passed: false })], [], [chRec('p', 'A', 20, 'answers are wrong on 3 of the 8 questions')], [], 2)[0];
+  assert.equal(upheld.challenge_log[0].state, 'upheld');
+});
+
+test('item 329: two verifiers on one model server are one executor, and a run with no baseline is not counted', () => {
+  const withExec = (pid: string, v: string, at: number, instance: string): LedgerRecord<Attestation> => {
+    const r = attRec(pid, v, at);
+    return { ...r, body: { ...r.body, executor: { api: 'http://localhost:8002', model: 'M', instance } } };
+  };
+  const shared = deriveCatalog([anchorRec('p', 'A')], [withExec('p', 'v1', 10, 'aaaa'), withExec('p', 'v2', 11, 'aaaa')], [], [], [], 2)[0];
+  assert.equal(shared.passed, 2);
+  assert.deepEqual(shared.executors, ['aaaa'], 'two attestations, one model server');
+  assert.equal(shared.executors_unknown, 0);
+  const apart = deriveCatalog([anchorRec('p', 'A')], [withExec('p', 'v1', 10, 'aaaa'), withExec('p', 'v2', 11, 'bbbb')], [], [], [], 2)[0];
+  assert.deepEqual(apart.executors.sort(), ['aaaa', 'bbbb']);
+  // pre-field attestations are 'unknown', never silently claimed as independent
+  const legacy = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11)], [], [], [], 2)[0];
+  assert.deepEqual(legacy.executors, []);
+  assert.equal(legacy.executors_unknown, 2);
+  // a run on a table that already had the knowledge applied has no baseline of its own: kept, never counted
+  const noBase = attRec('p', 'v2', 11);
+  const stacked = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), { ...noBase, body: { ...noBase.body, baseline: false } }], [], [], [], 2)[0];
+  assert.equal(stacked.passed, 1);
+  assert.equal(stacked.no_baseline, 1);
+  assert.equal(stacked.attestations.length, 2);
+  assert.equal(stacked.status, 'VERIFYING');
 });

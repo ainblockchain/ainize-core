@@ -3,7 +3,7 @@
  * Status machine (도 16): DRAFT → ANNOUNCED → VERIFYING → LISTED | REJECTED; LISTED → CHALLENGED → VERIFYING;
  * LISTED → SUPERSEDED when a newer patch on the same benchmark schema overlaps its address set.
  */
-import { MAX_CONTRIBUTORS } from './types.js';
+import { effectiveRoyaltyShare, effectiveVerifierShare, MAX_CONTRIBUTORS } from './types.js';
 import type { Attestation, Challenge, Contributor, LedgerRecord, PatchAnchor, PatchStatus, Settlement } from './types.js';
 import type { SupersedeRecord } from './ledger.js';
 
@@ -25,8 +25,26 @@ export interface CatalogEntry {
   quorum_ok: boolean;
   /** Quorum met AND nothing blocks the sale. CHALLENGED clears it — every buy gate reads this, not `quorum_ok`. */
   sellable: boolean;
-  /** The challenge that is currently holding the sale (newest challenge written after the entry was listed). */
+  /**
+   * The challenge nobody has answered yet: the newest challenge written after the newest attestation that counts.
+   * Set on ANNOUNCED / VERIFYING / REJECTED entries too, not only on LISTED ones (item 242) — a challenge is a
+   * question addressed to the verifiers, and an item stuck at 1/2 with one FAIL is exactly the case where the
+   * publisher needs one re-run and the product told them to file a challenge to get it.
+   */
   open_challenge?: Challenge;
+  /** Every challenge on this entry and what the verifiers said about it afterwards (item 328). */
+  challenge_log: { challenge: Challenge; state: 'open' | 'upheld' | 'dismissed'; answered_at?: number; answered_by?: string }[];
+  /** Addresses of the attestations that COUNT toward the quorum — who is paid the verification share (item 325). */
+  verifiers: string[];
+  /**
+   * Distinct model-server fingerprints behind those counted attestations (item 329): `2/2` with one entry here is
+   * two verifier processes on ONE engine, which is not two independent verifications.
+   */
+  executors: string[];
+  /** Counted attestations that carry no executor fingerprint (written before the field) — independence unknown. */
+  executors_unknown: number;
+  /** Counted attestations that ran without an un-patched baseline of their own — recorded, never counted (item 329). */
+  no_baseline: number;
   settlements: Settlement[];
   downloads: number;
   revenue: string;
@@ -85,6 +103,7 @@ export function deriveCatalog(
     seen.add(rec.body.id);
     byId.set(rec.body.id, {
       anchor: rec.body, status: 'ANNOUNCED', attestations: [], passed: 0, integrity_checks: 0, self_checks: 0, quorum, quorum_ok: false, sellable: false,
+      challenge_log: [], verifiers: [], executors: [], executors_unknown: 0, no_baseline: 0,
       settlements: [], downloads: 0, revenue: '0', challenges: [], superseded_by: [], supersedes: [], children: [],
       record_hash: rec.hash,
     });
@@ -92,6 +111,7 @@ export function deriveCatalog(
   for (const d of localDrafts) {
     if (!byId.has(d.id)) byId.set(d.id, {
       anchor: d, status: 'DRAFT', attestations: [], passed: 0, integrity_checks: 0, self_checks: 0, quorum, quorum_ok: false, sellable: false,
+      challenge_log: [], verifiers: [], executors: [], executors_unknown: 0, no_baseline: 0,
       settlements: [], downloads: 0, revenue: '0', challenges: [], superseded_by: [], supersedes: [], children: [], record_hash: '',
     });
   }
@@ -133,21 +153,43 @@ export function deriveCatalog(
     // that decides LISTED, so an attestation already on the chain stops counting the moment this node reads it.
     const isSelf = (a: Attestation) => !allowSelfAttest && sameAddr(a.verifier, e.anchor.author);
     const independent = e.attestations.filter((a) => !isSelf(a));
-    const executed = independent.filter((a) => a.passed && (!needsBenchmark || a.verified_on !== 'hash-only'));
+    // A run on a table where the knowledge was ALREADY applied has no un-patched baseline of its own: the record is
+    // kept (it is on the ledger for ever) but it is not a verification of anything (item 329).
+    const counted = independent.filter((a) => a.baseline !== false);
+    e.no_baseline = independent.length - counted.length;
+    const executed = counted.filter((a) => a.passed && (!needsBenchmark || a.verified_on !== 'hash-only'));
     e.passed = executed.length;
-    e.integrity_checks = independent.filter((a) => a.verified_on === 'hash-only').length;
+    e.verifiers = [...new Set(executed.map((a) => a.verifier))];
+    // Independence is a claim about the MACHINE, not the address: two verifier processes on one vLLM produce one
+    // executor fingerprint, and the entry says so instead of counting them as two independent verifications.
+    e.executors = [...new Set(executed.map((a) => a.executor?.instance).filter((x): x is string => !!x))];
+    e.executors_unknown = executed.filter((a) => !a.executor?.instance).length;
+    e.integrity_checks = counted.filter((a) => a.verified_on === 'hash-only').length;
     e.self_checks = e.attestations.length - independent.length;
     e.quorum_ok = e.passed >= quorum;
     e.downloads = e.settlements.length;
     e.revenue = e.settlements.reduce((s, x) => s + Number(x.amount || 0), 0).toFixed(6).replace(/\.?0+$/, '') || '0';
+    // What happened to each challenge: the attestations written after it are the verifiers' answer (item 328).
+    const byTime = [...e.challenges].sort((a, b) => a.created_at - b.created_at);
+    e.challenge_log = byTime.map((ch, i) => {
+      const until = byTime[i + 1]?.created_at ?? Infinity;
+      const answers = independent.filter((a) => a.created_at > ch.created_at && a.created_at < until).sort((a, b) => b.created_at - a.created_at);
+      const answer = answers[0];
+      if (!answer) return { challenge: ch, state: 'open' as const };
+      return { challenge: ch, state: (answer.passed ? 'dismissed' : 'upheld') as 'dismissed' | 'upheld', answered_at: answer.created_at, answered_by: answer.verifier };
+    });
+    // A challenge nobody has answered yet is open whatever the status is (item 242): an ANNOUNCED / VERIFYING /
+    // REJECTED entry is exactly where the publisher needs the re-run, and the verifier round reads this flag.
+    const openChallenge = e.challenge_log.filter((c) => c.state === 'open').map((c) => c.challenge).sort((a, b) => b.created_at - a.created_at)[0];
+    if (openChallenge) e.open_challenge = openChallenge;
     if (e.status === 'DRAFT') { e.sellable = false; continue; }
-    const failed = independent.filter((a) => !a.passed && (!needsBenchmark || a.verified_on !== 'hash-only')).length;
+    const failed = counted.filter((a) => !a.passed && (!needsBenchmark || a.verified_on !== 'hash-only')).length;
     if (e.quorum_ok) {
       e.status = 'LISTED';
       e.listed_at = Math.max(...executed.map((a) => a.created_at));
-      // A challenge written after the newest counted verification holds the entry until a verifier re-runs it
-      // (that re-verification is newer than the challenge, so it lands in `executed` and lifts the status again).
-      if (latestChallenge && latestChallenge.created_at > (e.listed_at ?? 0)) { e.status = 'CHALLENGED'; e.open_challenge = latestChallenge; }
+      // An unanswered challenge holds the entry until a verifier re-runs it (that re-verification is newer than the
+      // challenge, so it answers it and lifts the status again).
+      if (e.open_challenge) e.status = 'CHALLENGED';
       if (e.superseded_by.length && e.status !== 'CHALLENGED') e.status = 'SUPERSEDED';
     } else if (failed >= quorum) {
       e.status = 'REJECTED';
@@ -218,60 +260,116 @@ export function sanitizeContributors(list: unknown): Contributor[] | undefined {
 }
 
 /**
- * Royalty split (청구항 11, 16-3, 21) — two passes over one sale of `amount`:
+ * Royalty plan for one sale of `amount` (청구항 11, 16-3, 21) — the arithmetic that decides who is paid what. It is
+ * computed from the ANCHOR, never from the selling node's config (item 191): a derivative's seller could otherwise
+ * set `market.royaltyShare` to 0 and keep the base creator's share while her page still promised 30 %.
  *
- *  pass 1  — lineage pool = amount × share, divided equally among the unique ancestor AUTHORS
- *            (an ancestor by the seller itself folds its slice back into the seller);
- *  pass 1b — an ancestor author's slice is divided equally among that author's ancestor anchors, and each anchor
- *            slice is shared with the anchor's `contributors[]` by their shares (a data provider keeps earning
- *            when someone builds on their lesson);
- *  pass 2  — the seller remainder (amount − pool) is carved for `entry.anchor.contributors[]` from the FIXED
- *            remainder: carve = (amount − pool) × c.share. A contributor whose address is the seller is skipped.
- *            (Before the lineage design §11 fix each carve came off a shrinking remainder, so two 0.5 contributors
- *            were paid 50 % and 25 %; Σ contributor shares ≤ 1 is validated at createDraft / publish, and clamped
- *            here again for anchors this node did not write, so Σ carves ≤ remainder holds either way.)
+ *  pass 1  — lineage pool = amount × share, divided equally among the unique ancestor AUTHORS OTHER THAN THE SELLER.
+ *            A version chain of the seller's own bakes no longer dilutes outside creators (item 192): before this,
+ *            listing yesterday's version as a parent — which the design's own worked example recommends — halved
+ *            every outside creator's share on day 2 and, past the old depth-16 cut, dropped them to zero.
+ *  pass 1b — an outside ancestor author's slice is divided equally among that author's ancestor anchors, and each
+ *            anchor slice is shared with that anchor's `contributors[]` by their shares (a data provider keeps
+ *            earning when someone builds on their lesson).
+ *  pass 1c — an ancestor the seller's ledger cannot resolve is NOT silently dropped (item 310): the anchor that
+ *            names it carries `parent_authors[i]`, so the slice is still paid to that author; only when nothing
+ *            names an author does the slice go to `unresolved` — held back and written onto the settle record,
+ *            never quietly folded into the seller's own line.
+ *  pass 2  — the seller side (amount − pool) pays, in this order:
+ *              · the verification fee (item 325): sellerSide × verifier_share, divided equally among the
+ *                attestations that count toward this entry's quorum. Verifying costs a GPU minute and a gigabyte of
+ *                someone else's body per item and earned nothing anywhere in this product before it;
+ *              · the data providers: `c.share` of what is left, for the contributors credited on the sold anchor
+ *                AND on the seller's own ancestor anchors (one carve per address, the largest share they hold), so
+ *                the promise "your share of this node's take" survives the seller re-baking on top of itself;
+ *              · the seller keeps the remainder.
+ *
+ * Addresses are summed case-insensitively under their first-seen spelling (item 309): the same person credited once
+ * as a contributor (as typed) and once as an ancestor author (checksummed) was paid twice into two keys, and a local
+ * wallet that compares exactly could see neither.
  *
  * Amounts are decimal strings (6 dp, trailing zeros trimmed); zero-valued payouts are omitted except the seller's own line.
  */
-export function royaltySplit(
+export interface RoyaltyPlan {
+  /** address → amount. What the settle record carries and what payouts / credit balances are derived from. */
+  royalty: Record<string, string>;
+  /** parent id → amount owed to an ancestor this node could not name. Held back, and written onto the settlement. */
+  unresolved: Record<string, string>;
+  /** The verifier lines inside `royalty` (address → amount), so a wallet can say what was earned by verifying. */
+  verification: Record<string, string>;
+  /** Ancestor ids that resolved but whose walk was cut at MAX_LINEAGE_ANCHORS. */
+  truncated: boolean;
+  /** The shares actually used — the anchor's promise, floored at the network minimum. */
+  share: number;
+  verifier_share: number;
+}
+
+/** Cycle-safe ceiling on the lineage walk. Replaces the old `depth > 16` cut, which paid an 18-hop ancestor nothing. */
+export const MAX_LINEAGE_ANCHORS = 4096;
+
+export function royaltyPlan(
   entry: CatalogEntry, all: Map<string, CatalogEntry>, amount: number, share: number,
-): Record<string, string> {
+  opts: { verifierShare?: number; verifiers?: string[] } = {},
+): RoyaltyPlan {
   const seller = entry.anchor.author;
-  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+  const same = (a: string, b: string) => (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
+  const shareUsed = effectiveRoyaltyShare(entry.anchor, share);
+  const verifiers = [...new Set((opts.verifiers ?? entry.verifiers ?? []).filter((v) => typeof v === 'string' && v && !same(v, seller)))];
+  const verifierShareUsed = verifiers.length ? effectiveVerifierShare(entry.anchor, opts.verifierShare) : 0;
   // Defensive: shares outside [0, 1] (unvalidated peer / chain anchors) are clamped and the total carve of one anchor can
   // never exceed the slice it is carved from, so Σ payouts ≤ amount holds whatever the lineage carries.
   const safeShare = (c: Contributor) => (typeof c.share === 'number' && Number.isFinite(c.share) ? Math.min(1, Math.max(0, c.share)) : 0);
-  const ancestors: string[] = [];                       // unique ancestor authors, first-seen order
+
+  // ---- the walk: every ancestor anchor, breadth-first, cycle-safe, with no depth cut (item 192)
+  const outside: string[] = [];                          // unique ancestor authors ≠ seller, first-seen order
   const anchorsByAuthor = new Map<string, CatalogEntry[]>();
-  // the sold anchor is never its own ancestor, whatever a peer-written parent cycle claims
-  const visited = new Set<string>([entry.anchor.id]);
-  const walk = (id: string, depth: number) => {
-    if (depth > 16) return;
-    const e = all.get(id);
-    if (!e) return;
-    for (const p of e.anchor.parents) {
-      const pe = all.get(p);
-      if (pe && !visited.has(pe.anchor.id)) {
-        visited.add(pe.anchor.id);
-        if (!ancestors.includes(pe.anchor.author)) ancestors.push(pe.anchor.author);
-        const list = anchorsByAuthor.get(pe.anchor.author) ?? [];
-        list.push(pe);
-        anchorsByAuthor.set(pe.anchor.author, list);
-      }
-      walk(p, depth + 1);
-    }
+  const selfAncestors: CatalogEntry[] = [];              // ancestor anchors published by the seller itself
+  const unresolvedIds: string[] = [];                    // parent ids no anchor and no `parent_authors` entry names
+  const visited = new Set<string>([entry.anchor.id]);    // the sold anchor is never its own ancestor
+  const noteAuthor = (author: string, pe?: CatalogEntry) => {
+    if (same(author, seller)) { if (pe) selfAncestors.push(pe); return; }
+    const key = outside.find((a) => same(a, author)) ?? (outside.push(author), author);
+    if (pe) { const list = anchorsByAuthor.get(key) ?? []; list.push(pe); anchorsByAuthor.set(key, list); }
   };
-  walk(entry.anchor.id, 0);
+  let truncated = false;
+  const queue: string[] = [entry.anchor.id];
+  for (let head = 0; head < queue.length; head++) {
+    const e = all.get(queue[head]);
+    if (!e) continue;
+    const parents = e.anchor.parents ?? [];
+    for (let i = 0; i < parents.length; i++) {
+      const p = parents[i];
+      if (visited.has(p)) continue;
+      if (visited.size >= MAX_LINEAGE_ANCHORS) { truncated = true; break; }
+      visited.add(p);
+      const pe = all.get(p);
+      if (pe) { noteAuthor(pe.anchor.author, pe); queue.push(p); continue; }
+      // The anchor is not in this node's map. The record that names it also names its author — use that, and only
+      // give up (and say so on the settlement) when nothing does.
+      const named = e.anchor.parent_authors?.[i];
+      if (named && typeof named === 'string') noteAuthor(named);
+      else unresolvedIds.push(p);
+    }
+    if (truncated) break;
+  }
 
   const sums: Record<string, number> = {};
-  const add = (addr: string, n: number) => { sums[addr] = (sums[addr] ?? 0) + n; };
+  const keyFor = new Map<string, string>();               // lower-cased address → the spelling we sum under
+  const add = (addr: string, n: number) => {
+    const lower = (addr ?? '').toLowerCase();
+    const key = keyFor.get(lower) ?? (keyFor.set(lower, addr), addr);
+    sums[key] = (sums[key] ?? 0) + n;
+  };
 
-  // pass 1 + 1b
-  const pool = ancestors.length ? amount * share : 0;
-  const each = ancestors.length ? pool / ancestors.length : 0;
-  for (const a of ancestors) {
+  // ---- pass 1 / 1b / 1c: the lineage pool
+  const payees = outside.length + unresolvedIds.length;
+  const pool = payees ? amount * shareUsed : 0;
+  const each = payees ? pool / payees : 0;
+  const unresolved: Record<string, string> = {};
+  for (const a of outside) {
     const anchors = anchorsByAuthor.get(a) ?? [];
-    const sub = anchors.length ? each / anchors.length : each;
+    if (!anchors.length) { add(a, each); continue; }      // named by `parent_authors` but not held here
+    const sub = each / anchors.length;
     for (const pe of anchors) {
       let rem = sub;
       for (const c of Array.isArray(pe.anchor.contributors) ? pe.anchor.contributors : []) {
@@ -282,25 +380,55 @@ export function royaltySplit(
       }
       add(a, rem);
     }
-    if (!anchors.length) add(a, each);
   }
+  for (const id of unresolvedIds) unresolved[id] = (each).toFixed(6).replace(/\.?0+$/, '') || '0';
 
-  // pass 2 — every contributor's share is a fraction of the same fixed remainder (§11 worked example 5)
+  // ---- pass 2: the seller side
   const sellerSide = amount - pool;
   let remainder = sellerSide;
-  for (const c of Array.isArray(entry.anchor.contributors) ? entry.anchor.contributors : []) {
-    if (!c || typeof c.address !== 'string' || same(c.address, seller)) continue;
-    const carve = Math.min(remainder, sellerSide * safeShare(c));
-    add(c.address, carve);
+  const verification: Record<string, string> = {};
+  const verifierPool = sellerSide * verifierShareUsed;
+  if (verifiers.length && verifierPool > 0) {
+    const per = verifierPool / verifiers.length;
+    for (const v of verifiers) {
+      const carve = Math.min(remainder, per);
+      add(v, carve);
+      verification[v] = carve.toFixed(6).replace(/\.?0+$/, '') || '0';
+      remainder -= carve;
+    }
+  }
+  // Contributors credited on the sold anchor and on the seller's own ancestor anchors, once per address at the
+  // largest share they hold; every carve is a fraction of the SAME base, so two 0.5 providers are 50 % and 50 %.
+  const base = remainder;
+  const providers = new Map<string, { address: string; share: number }>();
+  for (const pe of [entry, ...selfAncestors]) {
+    for (const c of Array.isArray(pe.anchor.contributors) ? pe.anchor.contributors : []) {
+      if (!c || typeof c.address !== 'string' || same(c.address, seller)) continue;
+      const lower = c.address.toLowerCase();
+      const cur = providers.get(lower);
+      if (!cur || safeShare(c) > cur.share) providers.set(lower, { address: cur?.address ?? c.address, share: Math.max(cur?.share ?? 0, safeShare(c)) });
+    }
+  }
+  for (const { address, share: sh } of providers.values()) {
+    const carve = Math.min(remainder, base * sh);
+    add(address, carve);
     remainder -= carve;
   }
   add(seller, remainder);
 
   const fmt = (n: number) => n.toFixed(6).replace(/\.?0+$/, '');
-  const out: Record<string, string> = {};
+  const royalty: Record<string, string> = {};
   for (const [addr, n] of Object.entries(sums)) {
-    if (addr !== seller && n <= 0) continue;
-    out[addr] = fmt(n) || '0';
+    if (!same(addr, seller) && n <= 0) continue;
+    royalty[addr] = fmt(n) || '0';
   }
-  return out;
+  return { royalty, unresolved, verification, truncated, share: shareUsed, verifier_share: verifierShareUsed };
+}
+
+/** The payout map alone — the shape every caller before the lineage/verifier work expected. */
+export function royaltySplit(
+  entry: CatalogEntry, all: Map<string, CatalogEntry>, amount: number, share: number,
+  opts: { verifierShare?: number; verifiers?: string[] } = {},
+): Record<string, string> {
+  return royaltyPlan(entry, all, amount, share, opts).royalty;
 }
