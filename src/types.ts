@@ -576,6 +576,10 @@ export interface TeachDataset {
   columns?: Record<string, string | number>;
   summary: TeachDatasetSummary;     // counts ONLY — never the per-row report (it is read paginated from disk)
   parent_dataset?: string;          // set by fork and by "add questions" on an in-use dataset
+  /** Lineage (design §5.3): the published KNOWLEDGE this set was copied out of, its set's sha, and how many rows are still its. */
+  parent_patch?: string;
+  parent_dataset_sha?: string;
+  inherited_rows?: number;
   retention: 'keep' | 'delete_after_training';
   job_ids: string[];
   created_at: number;
