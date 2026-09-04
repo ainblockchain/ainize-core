@@ -557,6 +557,12 @@ export interface NodeConfig {
     currency: 'AIN' | 'CREDIT';
     defaultPrice: string;
     royaltyShare: number;      // share of price distributed to lineage parents (0..1)
+    /**
+     * Share of the SELLER side of each sale paid to the verifiers whose attestations count for that knowledge
+     * (item 325). Written into every anchor this node creates and floored at NETWORK_MIN_VERIFIER_SHARE when it
+     * is read back, so a seller cannot publish knowledge that pays its verifiers nothing.
+     */
+    verifierShare?: number;
     initialCredit: string;     // local-credit wallet seed for new accounts
     /**
      * How many addresses this node will ever hand `initialCredit` to (default 100). Local credit is issued by the
