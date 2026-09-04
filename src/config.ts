@@ -199,6 +199,14 @@ export function deriveRowsPerJob(
 /** How long raw `events` rows are kept when the operator has not said otherwise (item 128). */
 export const DEFAULT_EVENTS_RETENTION_DAYS = 90;
 
+/**
+ * What a fresh node accepts from peer exchange (items 136/137). Discovery stays ON — a marketplace whose nodes only
+ * ever talk to a hand-written list is not a network — but it is now bounded, marked and reversible: learned peers
+ * are labelled `learned` in `ainize peers ls`, capped at `maxPeers`, dropped when they stop answering, and an
+ * endpoint the operator removes stays removed until they add it back.
+ */
+export const DEFAULT_P2P_CONFIG = { acceptExchange: true, maxPeers: 50, evictAfterFailures: 60, staleDays: 7 };
+
 export function defaultConfig(opts: InitOptions = {}): NodeConfig {
   const home = opts.home ?? DEFAULT_HOME;
   const identity = opts.privateKey ? identityFromPrivateKey(opts.privateKey) : createIdentity();
@@ -242,6 +250,7 @@ export function defaultConfig(opts: InitOptions = {}): NodeConfig {
       creditGrants: 100,
     },
     teach: structuredClone(DEFAULT_TEACH_CONFIG),
+    p2p: { ...DEFAULT_P2P_CONFIG },
     server: { trustProxy: false },
     events: { retentionDays: DEFAULT_EVENTS_RETENTION_DAYS },
     gossipIntervalMs: 4000,

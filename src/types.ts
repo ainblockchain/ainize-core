@@ -396,6 +396,12 @@ export interface PeerInfo {
   build?: string;
   /** `version` of config.json: the schema version it was written by, kept for migrations. */
   config_version?: string;
+  /**
+   * A per-START id, minted when the node process boots (item 139). Two endpoints presenting one ADDRESS is either a
+   * node that moved — same instance, new URL — or two nodes running on one identity, which silently breaks every
+   * download and attestation routed by address. Without this the two cases are indistinguishable.
+   */
+  instance?: string;
   last_seen: number;
 }
 
@@ -618,6 +624,21 @@ export interface NodeConfig {
      * `ainize keys new` away (item 364). Every grant is recorded; past the cap a new address gets nothing.
      */
     creditGrants?: number;
+  };
+  /**
+   * What this node accepts from the gossip network (items 136/137). Peer exchange used to add every endpoint any
+   * peer advertised — no cap, no record of where it came from, no way to refuse — so an operator could not answer
+   * "who is my node talking to?" from config.json, and `peers rm` survived exactly one gossip round.
+   */
+  p2p?: {
+    /** Learn peers from peer exchange at all (default true). false = talk only to the configured list. */
+    acceptExchange?: boolean;
+    /** Ceiling on the peer table (default 50). Past it the least recently seen LEARNED peer is dropped. */
+    maxPeers?: number;
+    /** Drop a LEARNED peer after this many consecutive failed rounds (default 60; 0 = never). */
+    evictAfterFailures?: number;
+    /** Drop a LEARNED peer this many days after it was last seen (default 7; 0 = never). */
+    staleDays?: number;
   };
   /**
    * HTTP server knobs. `trustProxy` is Express's `trust proxy` setting: `false` (default) → `req.ip` is the TCP peer, so a

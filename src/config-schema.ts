@@ -131,6 +131,13 @@ export const nodeConfigSchema = z.object({
     /** how many addresses this node will hand starting credit to before it stops issuing (item 364) */
     creditGrants: positive.optional(),
   }),
+  /** What this node accepts from peer exchange (items 136/137). */
+  p2p: z.object({
+    acceptExchange: z.boolean().optional(),
+    maxPeers: nonNegative.optional(),
+    evictAfterFailures: nonNegative.optional(),
+    staleDays: nonNegative.optional(),
+  }).optional(),
   server: z.object({ trustProxy: z.union([z.boolean(), z.number(), z.string(), z.array(z.string())]) .optional() }).optional(),
   events: z.object({ retentionDays: positive }).optional(),
   teach: teachSchema.optional(),
