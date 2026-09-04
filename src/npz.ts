@@ -6,7 +6,7 @@
  */
 import { openSync, readSync, closeSync, fstatSync, writeFileSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
-import { bf16Bits } from './lineage.js';
+import { bf16Bits, preStateSha256 } from './lineage.js';
 
 interface ZipEntry {
   name: string;
@@ -302,7 +302,7 @@ export function writeNpz(path: string, members: NpzMemberSpec[]): void {
  * `after` differ in the dropped 16 bits are the same row as far as the model is concerned.
  */
 export function valuesEqualCount(pathA: string, pathB: string): { shared: number; equal: number; differ: number; dim: number } {
-  const a = loadAfter(pathA), b = loadAfter(pathB);
+  const a = loadPair(pathA), b = loadPair(pathB);
   const dim = Math.min(a.dim, b.dim);
   const index = new Map<string, number>();
   for (let i = 0; i < a.addrs.length; i++) index.set(String(a.addrs[i]), i);
@@ -318,12 +318,126 @@ export function valuesEqualCount(pathA: string, pathB: string): { shared: number
   return { shared, equal, differ: shared - equal, dim };
 }
 
-/** `addrs` + the `after` matrix of one file (float32, row-major). */
-function loadAfter(path: string): { addrs: BigInt64Array; after: Float32Array; dim: number } {
+
+/**
+ * Row-level report for a MERGE of two knowledge files (design §9 step 2). Where `valuesEqualCount` answers "do these
+ * two disagree", this answers the four numbers SC-14 puts on the screen — `{ra} only in A · {rb} only in B · {shared}
+ * written by both ({dis} disagree)` — plus the two facts that decide whether a merge can be done without training:
+ *
+ *  - `disagree`: shared addresses whose `after` differs in bf16 (the unit the table stores).
+ *  - `opposing`: shared addresses where BOTH files moved the row away from their own `before` and landed on different
+ *    values. A disagreement where only one file wrote the row is a stacking order question; an opposing one cannot be
+ *    resolved by order at all, and is the honest count behind "these two really cannot just be combined".
+ *  - `before_differs`: shared addresses whose `before` differs — the two files disagree about what was underneath
+ *    them, so a stand-alone union of them has no single value to write as `before` (a delta over a stack, merged with
+ *    a file built on the bare model, is the usual cause).
+ */
+export interface NpzCompare {
+  a_rows: number; b_rows: number; a_only: number; b_only: number;
+  shared: number; equal: number; disagree: number; opposing: number; before_differs: number; dim: number;
+}
+
+export function compareNpz(pathA: string, pathB: string): NpzCompare {
+  const a = loadPair(pathA), b = loadPair(pathB);
+  const dim = Math.min(a.dim, b.dim);
+  const index = new Map<string, number>();
+  for (let i = 0; i < a.addrs.length; i++) if (!index.has(String(a.addrs[i]))) index.set(String(a.addrs[i]), i);
+  let shared = 0, equal = 0, opposing = 0, beforeDiffers = 0;
+  const seen = new Set<string>();
+  for (let j = 0; j < b.addrs.length; j++) {
+    const key = String(b.addrs[j]);
+    const i = index.get(key);
+    if (i === undefined) continue;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    shared++;
+    let same = true, bothWrote = true, sameBefore = true;
+    for (let d = 0; d < dim; d++) {
+      const av = bf16Bits(a.after[i * a.dim + d]), bv = bf16Bits(b.after[j * b.dim + d]);
+      if (av !== bv) same = false;
+      if (bf16Bits(a.before[i * a.dim + d]) !== bf16Bits(b.before[j * b.dim + d])) sameBefore = false;
+    }
+    if (!sameBefore) beforeDiffers++;
+    if (same) { equal++; continue; }
+    // both files changed this row relative to their own `before`
+    let aMoved = false, bMoved = false;
+    for (let d = 0; d < dim && !(aMoved && bMoved); d++) {
+      if (bf16Bits(a.after[i * a.dim + d]) !== bf16Bits(a.before[i * a.dim + d])) aMoved = true;
+      if (bf16Bits(b.after[j * b.dim + d]) !== bf16Bits(b.before[j * b.dim + d])) bMoved = true;
+    }
+    bothWrote = aMoved && bMoved;
+    if (bothWrote) opposing++;
+  }
+  return {
+    a_rows: a.addrs.length, b_rows: b.addrs.length,
+    a_only: a.addrs.length - shared, b_only: b.addrs.length - shared,
+    shared, equal, disagree: shared - equal, opposing, before_differs: beforeDiffers, dim,
+  };
+}
+
+/** Why a union of two files cannot be written (design §9 T0). */
+export type UnionRefusal = 'rows_disagree' | 'before_differs' | 'dim_mismatch';
+export interface UnionResult { rows: number; a_rows: number; b_rows: number; shared: number; pre_state_sha256: string; dim: number }
+
+/**
+ * **T0 “Just combine”** (design §9 step 3): the row UNION of two knowledge files, written as a new .npz — no training,
+ * no GPU, seconds.
+ *
+ * It is allowed only when the two files cannot contradict each other on the model: either their address sets are
+ * disjoint, or every shared address holds a bf16-identical `after` AND a bf16-identical `before`. Anything else throws
+ * — **nothing is averaged and nothing is added** (design §9 “Forbidden”, F8): a row two files disagree about has to be
+ * retrained (T1) or rebuilt (T2), because a value neither file measured is not knowledge.
+ *
+ * `extra` members (a job marker, `meta`) are written beside `addrs`/`before`/`after` exactly as given.
+ */
+export function unionNpz(dest: string, pathA: string, pathB: string, extra: NpzMemberSpec[] = []): UnionResult {
+  const a = loadPair(pathA), b = loadPair(pathB);
+  if (a.dim !== b.dim) throw new Error(`union_refused: dim_mismatch (${a.dim} vs ${b.dim})`);
+  const D = a.dim;
+  const index = new Map<string, number>();
+  for (let i = 0; i < a.addrs.length; i++) if (!index.has(String(a.addrs[i]))) index.set(String(a.addrs[i]), i);
+  let shared = 0;
+  const take: { addr: bigint; from: 'a' | 'b'; at: number }[] = [];
+  for (let i = 0; i < a.addrs.length; i++) take.push({ addr: a.addrs[i], from: 'a', at: i });
+  for (let j = 0; j < b.addrs.length; j++) {
+    const i = index.get(String(b.addrs[j]));
+    if (i === undefined) { take.push({ addr: b.addrs[j], from: 'b', at: j }); continue; }
+    shared++;
+    for (let d = 0; d < D; d++) {
+      if (bf16Bits(a.after[i * D + d]) !== bf16Bits(b.after[j * D + d])) throw new Error(`union_refused: rows_disagree at address ${a.addrs[i]}`);
+      if (bf16Bits(a.before[i * D + d]) !== bf16Bits(b.before[j * D + d])) throw new Error(`union_refused: before_differs at address ${a.addrs[i]}`);
+    }
+  }
+  const N = take.length;
+  const addrs = Buffer.alloc(8 * N); const before = Buffer.alloc(4 * D * N); const after = Buffer.alloc(4 * D * N);
+  for (const [r, t] of take.entries()) {
+    const src = t.from === 'a' ? a : b;
+    addrs.writeBigInt64LE(t.addr, 8 * r);
+    for (let d = 0; d < D; d++) {
+      before.writeFloatLE(src.before[t.at * D + d], 4 * (D * r + d));
+      after.writeFloatLE(src.after[t.at * D + d], 4 * (D * r + d));
+    }
+  }
+  const pre = preStateSha256(new BigInt64Array(addrs.buffer, addrs.byteOffset, N), new Float32Array(before.buffer, before.byteOffset, N * D), D);
+  writeNpz(dest, [
+    { name: 'addrs', descr: '<i8', shape: [N], body: addrs },
+    { name: 'before', descr: '<f4', shape: [N, D], body: before },
+    { name: 'after', descr: '<f4', shape: [N, D], body: after },
+    ...extra,
+  ]);
+  return { rows: N, a_rows: a.addrs.length, b_rows: b.addrs.length, shared, pre_state_sha256: pre, dim: D };
+}
+
+/** `addrs` + both matrices of one file. */
+function loadPair(path: string): { addrs: BigInt64Array; before: Float32Array; after: Float32Array; dim: number } {
   const addrs = readNpzAddrs(path);
-  const { header, body } = readNpzMember(path, 'after');
-  if (!/^[<|=]f4$/.test(header.descr)) throw new Error(`npz: after dtype ${header.descr} unsupported (expected float32)`);
-  const aligned = Buffer.alloc(body.length);
-  body.copy(aligned);
-  return { addrs, after: new Float32Array(aligned.buffer, aligned.byteOffset, body.length / 4), dim: header.shape[1] ?? 1 };
+  const read = (name: 'before' | 'after') => {
+    const { header, body } = readNpzMember(path, name);
+    if (!/^[<|=]f4$/.test(header.descr)) throw new Error(`npz: ${name} dtype ${header.descr} unsupported (expected float32)`);
+    const aligned = Buffer.alloc(body.length);
+    body.copy(aligned);
+    return { arr: new Float32Array(aligned.buffer, aligned.byteOffset, body.length / 4), dim: header.shape[1] ?? 1 };
+  };
+  const b = read('before'); const a = read('after');
+  return { addrs, before: b.arr, after: a.arr, dim: Math.min(a.dim, b.dim) };
 }
