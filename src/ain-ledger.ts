@@ -6,7 +6,7 @@
  *               content = patch manifest JSON → content_hash on-chain; parentEntry → `extends` graph edge
  *               (lineage / royalty), relatedEntries → `related` edges (branch siblings, conflicts).
  *               Public patch metadata mirrors to /apps/knowledge/market/patches/$id (author-only write rule).
- *  - attest   → /apps/knowledge/market/attestations/$id/$verifier   (rule: auth.addr === $verifier)
+ *  - attest   → /apps/knowledge/market/attestations/$id/$verifier/$created_at   (rule: auth.addr === $verifier && data === null — write-once, item 331)
  *  - settle   → /apps/knowledge/market/settlements/$id/$tx           (rule: buyer or seller)
  *               + ain-js access receipt (/apps/knowledge/access/$buyer/…) written by the buyer after download (recordAccess).
  *  - challenge→ /apps/knowledge/market/challenges/$id/$challenger
@@ -161,9 +161,19 @@ export function recordsFromMarketState(market: any): LedgerRecord[] {
     anchorTs.set(id, a.created_at ?? 0); anchorAuthor.set(id, a.author);
   }
   for (const [id, m] of Object.entries<any>(market?.attestations ?? {}))
-    for (const [v, at] of Object.entries<any>(m)) if (at && at.patch_id === id && at.verifier === v && typeof at.passed === 'boolean') {
-      push('attest', `${MARKET}/attestations/${id}/${v}`, at, v, at.created_at ?? 0);
-      attestTs.set(id, Math.max(attestTs.get(id) ?? 0, at.created_at ?? 0));
+    for (const [v, slot] of Object.entries<any>(m)) {
+      // Two shapes live under one verifier (item 331). Records written before 2026-09 are a single value at
+      // `…/$id/$verifier`, overwritten in place by every re-verification. Records written since are one write-once
+      // child per `created_at`, so a PASS that was challenged and re-passed leaves both on the chain — which is what
+      // `effectiveAttestation` needs to choose among, and the only history a verifier can be held to.
+      const legacy = slot && typeof slot.passed === 'boolean';
+      const records: [string, any][] = legacy ? [['', slot]] : Object.entries<any>(slot ?? {});
+      for (const [key, at] of records) {
+        if (!at || at.patch_id !== id || at.verifier !== v || typeof at.passed !== 'boolean') continue;
+        // the legacy ref is kept exactly as it was: the record hash is derived from it
+        push('attest', legacy ? `${MARKET}/attestations/${id}/${v}` : `${MARKET}/attestations/${id}/${v}/${key}`, at, v, at.created_at ?? 0);
+        attestTs.set(id, Math.max(attestTs.get(id) ?? 0, at.created_at ?? 0));
+      }
     }
   for (const [id, m] of Object.entries<any>(market?.settlements ?? {}))
     for (const [k, s] of Object.entries<any>(m)) push('settle', `${MARKET}/settlements/${id}/${k}`, s, s.seller, s.created_at ?? 0);
@@ -336,6 +346,9 @@ export class AinLedger implements Ledger {
     const rules: [string, string][] = [
       [`${MARKET}/patches/$patch_id`, "auth.addr === newData.author && (data === null || data.author === auth.addr)"],
       [`${MARKET}/attestations/$patch_id/$verifier`, 'auth.addr === $verifier'],
+      // item 331 — one slot per measurement, and a written slot is immutable. Without `data === null` a verifier
+      // could silently rewrite what it had signed: a FAIL that became a PASS left no trace of either.
+      [`${MARKET}/attestations/$patch_id/$verifier/$created_at`, 'auth.addr === $verifier && data === null'],
       [`${MARKET}/settlements/$patch_id/$tx_hash`, 'auth.addr === newData.seller || auth.addr === newData.buyer'],
       [`${MARKET}/challenges/$patch_id/$challenger`, 'auth.addr === $challenger'],
       [`${MARKET}/branches/$branch`, "auth.addr === newData.owner && (data === null || data.owner === auth.addr)"],
@@ -387,7 +400,10 @@ export class AinLedger implements Ledger {
       }
       case 'attest': {
         const at = body as unknown as Attestation;
-        ref = `${MARKET}/attestations/${at.patch_id}/${this.identity.address}`;
+        // One write-once slot per measurement (item 331). The old ref held ONE value per verifier and the rule let its
+        // author overwrite it, so a re-verification erased what this node had signed before the challenge — the only
+        // asset a verifier accumulates is a history it can be held to, and it was silently rewritable by itself.
+        ref = `${MARKET}/attestations/${at.patch_id}/${this.identity.address}/${keyOf(String(at.created_at || ts))}`;
         txHash = await this.set(ref, at);
         break;
       }
