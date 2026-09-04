@@ -33,11 +33,19 @@ export interface BenchmarkSpec {
   format: string[];
   /** Collateral (locality) bound in nats for unrelated-text logprob drift. */
   collateral_bound_nat?: number;
-  /** Optional inline sample set: {prompt, expect} pairs used by verifiers. */
-  samples?: { prompt: string; expect: string }[];
-  /** sha256 of the sealed answer set (commit–reveal, 청구항 19-2). */
+  /**
+   * Optional inline sample set: {prompt, expect} pairs used by verifiers. Teach anchors carry at most
+   * `TEACH_SAMPLES_ON_CHAIN` (the child's own first, then one per parent); the full list lives in the dataset blob's
+   * `benchmark.jsonl`, whose canonical hash is `answers_hash`. `source` names the parent a sample was taken from, so a
+   * verifier scores per source without fetching the parents (lineage design §5.1).
+   */
+  samples?: BenchmarkSample[];
+  /** sha256 of the sealed answer set (commit–reveal, 청구항 19-2) — for teach anchors: sha256(canonical full sample list). */
   answers_hash?: string;
 }
+export interface BenchmarkSample { prompt: string; expect: string; source?: string }
+/** How many benchmark samples a teach anchor carries on the ledger (lineage design §5.1, F10: ~100 KB AIN free tier). */
+export const TEACH_SAMPLES_ON_CHAIN = 32;
 
 export interface ModelIdentity {
   /** Human name, e.g. "Qwen3.8-Flash-Next-W4A16". */
@@ -127,10 +135,58 @@ export interface PatchAnchor {
   /** 'teach' for visitor-taught knowledge; absent/'operator' for knowledge registered by the node operator. */
   origin?: PatchOrigin;
   /**
-   * Teach mode v2 — hash-only provenance of the dataset this knowledge was trained from (design §D12). The dataset
-   * CONTENT is never published: a buyer can verify a re-train used the same input without ever seeing the teacher's file.
+   * Teach mode v2 / lineage: provenance of the training set this knowledge was built from. Hashes and counts on the
+   * record; the bytes live in the content-addressed dataset blob store and are served under `access`
+   * (lineage design §5.1, §6 — revises teachable-dataset-design D12: ≤ 32 trained questions are public on the record
+   * in any case, as benchmark samples). Absent `access` = `private` (every anchor written before the lineage fields).
    */
-  dataset?: { sha256: string; rows: number; source: TeachDatasetSource };
+  dataset?: AnchorDataset;
+  /**
+   * What this knowledge did to its bases (lineage design §5.1). Absent = "declared parent — not trained on top"
+   * (every pre-lineage anchor: `parents[]` is credit and royalty only, apply order stays last-wins).
+   */
+  derivation?: PatchDerivation;
+  /**
+   * The table state the body was trained against (claim 55): an ordered stack of knowledges that must be applied
+   * BELOW this one. Absent = stand-alone build (today's semantics). `export: 'squash'` carries the parent rows itself
+   * and has an empty stack.
+   */
+  base?: PatchBase;
+}
+
+export type DerivationKind = 'extend' | 'update' | 'contradict' | 'merge' | 'transfer'; // transfer reserved (claim 18)
+export interface DerivationBase { patch_id: string; patch_sha256: string; dataset_sha256?: string; rows: number }
+export interface PatchDerivation {
+  kind: DerivationKind;
+  /** ⊆ parents */
+  bases: DerivationBase[];
+  added_rows: number;
+  changed_rows: number;
+  removed_rows: number;
+  /** merge only */
+  policy?: 'keep_a' | 'keep_b' | 'manual';
+  /** merge only */
+  tier?: 'union' | 'retrain' | 'rebuild';
+}
+export interface PatchBase {
+  /** ordered; the table state the delta was trained against */
+  stack: { patch_id: string; patch_sha256: string }[];
+  export: 'delta' | 'squash';
+  /** sha256 over sorted (addr int64 LE ‖ bf16(before) bytes) of this knowledge's rows */
+  pre_state_sha256: string;
+}
+export interface AnchorDataset {
+  sha256: string;
+  rows: number;
+  source: TeachDatasetSource;
+  /** who may read the training set (§6.1); absent = 'private' */
+  access?: DatasetAccess;
+  /** one of DATASET_LICENSES (§6.4) */
+  license?: string;
+  /** the training sets this one was built from (⊆ parents) */
+  parents?: { patch_id: string; sha256: string; rows: number }[];
+  /** leaf = sha256(canonical row); lets a private parent's rows be proven by inclusion */
+  merkle_root?: string;
 }
 
 /** Generation recipe R = (corpus template, benchmark, hyper-params) — what is portable across models. */
@@ -150,6 +206,12 @@ export interface PatchRecipe {
   probe?: { hits: number; total: number; heldout_hits?: number };
   /** Teach mode v2: which dataset (exact bytes + revision) this lesson was trained from — enough to re-train it. */
   dataset?: { sha256: string; rows: number; revision: number; source: TeachDatasetSource; name?: string };
+  /** Lineage: the knowledges loaded into the table before step 1 (in order), with the rows each contributed. */
+  parents?: { patch_id: string; sha256: string; rows: number; loaded?: boolean }[];
+  export?: 'delta' | 'squash';
+  pre_state_sha256?: string;
+  /** fact index → table addresses of its renderings (recipe.json only — never on the anchor). */
+  fact_addrs?: Record<number, number[]>;
 }
 
 export interface Attestation {
@@ -218,6 +280,8 @@ export interface PeerInfo {
   model?: string;             // id_M served by this node (if serving)
   branches: string[];         // subscribed branches
   blobs: string[];            // sha256 of patch bodies held
+  /** sha256 of published training sets held (sliced to 40, like `blobs`); a child node re-advertises the parent sets it fetched. */
+  datasets?: string[];
   /** The build that is RUNNING (`VERSION` from the code), not the string config.json was written with. */
   version: string;
   /** When this node's binaries were last built/edited — the only honest answer to "which build is that?" (item 141). */

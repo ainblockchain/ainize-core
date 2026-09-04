@@ -121,9 +121,17 @@ export function withEmptyArrays<T>(body: T): T {
     // anchor
     b.parents = b.parents ?? []; b.parent_authors = b.parent_authors ?? [];
     b.contributors = Array.isArray(b.contributors) ? b.contributors.slice(0, MAX_CONTRIBUTORS) : [];
+    // lineage fields (design §5.1): the three arrays inside them are restored only when the parent object exists,
+    // so a pre-lineage anchor reads back exactly as it was written
+    const dv = b.derivation as Record<string, unknown> | undefined;
+    if (dv && typeof dv === 'object') dv.bases = dv.bases ?? [];
+    const bs = b.base as Record<string, unknown> | undefined;
+    if (bs && typeof bs === 'object') bs.stack = bs.stack ?? [];
+    const ds = b.dataset as Record<string, unknown> | undefined;
+    if (ds && typeof ds === 'object' && ds.access !== undefined) ds.parents = ds.parents ?? [];
   }
   if ('benchmark' in b && b.benchmark && typeof b.benchmark === 'object') { const bm = b.benchmark as Record<string, unknown>; bm.format = bm.format ?? []; bm.samples = bm.samples ?? []; }
-  if ('roles' in b || 'endpoint' in b) { b.roles = b.roles ?? []; b.branches = b.branches ?? []; b.blobs = b.blobs ?? []; }
+  if ('roles' in b || 'endpoint' in b) { b.roles = b.roles ?? []; b.branches = b.branches ?? []; b.blobs = b.blobs ?? []; b.datasets = b.datasets ?? []; }
   if ('context' in b && 'owner' in b) { b.patch_ids = b.patch_ids ?? []; b.context = b.context ?? {}; }
   if ('action' in b && 'branch' in b) { b.patch_ids = b.patch_ids ?? []; }
   if ('royalty' in b) { b.royalty = b.royalty ?? {}; }
