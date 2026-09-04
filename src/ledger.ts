@@ -24,6 +24,18 @@ export interface SupersedeRecord {
   created_at?: number;
 }
 
+/**
+ * Author's takedown of their own knowledge (`retire` record). The anchor is immutable and stays on the record —
+ * this is the only way a publisher stops selling it: the catalogue drops it, the x402 gateway answers 410, and
+ * buyers who already paid keep their download rights. Only a record signed by the anchor's own author counts.
+ */
+export interface RetireRecord {
+  patch_id: string;
+  /** Why it was taken down, in the publisher's words (shown to buyers; may be empty). */
+  reason: string;
+  created_at: number;
+}
+
 export interface SubscriptionRecord {
   node: string;
   branch: string;
@@ -34,7 +46,7 @@ export interface SubscriptionRecord {
 }
 
 export type RecordBody =
-  | PatchAnchor | Attestation | Settlement | Challenge | BranchInfo | PeerInfo | SupersedeRecord | SubscriptionRecord;
+  | PatchAnchor | Attestation | Settlement | Challenge | BranchInfo | PeerInfo | SupersedeRecord | SubscriptionRecord | RetireRecord;
 
 export interface LedgerInfo {
   kind: 'local' | 'ain';

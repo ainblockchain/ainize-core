@@ -21,7 +21,7 @@
 import { createRequire } from 'node:module';
 import { canonicalJson, sha256Hex } from './canonical.js';
 import { MAX_CONTRIBUTORS } from './types.js';
-import type { Ledger, LedgerEvents, LedgerInfo, RecordBody, SubscriptionRecord, SupersedeRecord } from './ledger.js';
+import type { Ledger, LedgerEvents, LedgerInfo, RecordBody, RetireRecord, SubscriptionRecord, SupersedeRecord } from './ledger.js';
 import type {
   Attestation, BranchInfo, Challenge, LedgerRecord, PatchAnchor, PeerInfo, RecordKind, Settlement,
 } from './types.js';
@@ -180,6 +180,9 @@ export function recordsFromMarketState(market: any): LedgerRecord[] {
       const ts = typeof s.created_at === 'number' && s.created_at > 0 ? s.created_at : related ? related + 1 : 0;
       push('supersede', `${MARKET}/supersedes/${o}/${nw}`, s, anchorAuthor.get(nw) ?? '', ts);
     }
+  for (const [id, m] of Object.entries<any>(market?.retires ?? {}))
+    for (const [author, r] of Object.entries<any>(m)) if (r && typeof r.patch_id === 'string')
+      push('retire', `${MARKET}/retires/${id}/${author}`, r, author, r.created_at ?? 0);
   for (const [node, m] of Object.entries<any>(market?.subscriptions ?? {}))
     for (const [b, s] of Object.entries<any>(m)) {
       const related = branchTs.get(s?.branch) ?? 0;
@@ -258,10 +261,22 @@ export class AinLedger implements Ledger {
     return Number(raw ?? 0) || 0;
   }
 
-  async transfer(to: string, value: number): Promise<{ tx_hash: string; key: string }> {
-    const res = await this.ain.wallet.transfer({ to, value, nonce: -1 });
-    const hash = AinLedger.assertOk(res, `transfer→${to}`);
-    return { tx_hash: hash, key: '' };
+  /**
+   * Send AIN. With `key`, the transfer is written at /transfer/$from/$to/$key instead of a random push id, which is
+   * how an x402 payment is bound to the quote it answers: the seller recomputes the key from (resource, nonce) and
+   * refuses a transfer that carries any other one (finding 344). Without `key` this is ain-js's own push behaviour,
+   * used by the royalty payouts, which answer no quote.
+   */
+  async transfer(to: string, value: number, key?: string): Promise<{ tx_hash: string; key: string }> {
+    if (!key) {
+      const res = await this.ain.wallet.transfer({ to, value, nonce: -1 });
+      return { tx_hash: AinLedger.assertOk(res, `transfer→${to}`), key: '' };
+    }
+    if (!/^[A-Za-z0-9_-]{1,120}$/.test(key)) throw new Error(`invalid transfer key ${JSON.stringify(key)}`);
+    if (!(value > 0)) throw new Error(`non-positive transfer value ${value}`);
+    const from = this.identity.address;
+    const res = await this.ain.db.ref(`/transfer/${from}/${to}/${key}/value`).setValue({ value, ...this.tx() });
+    return { tx_hash: AinLedger.assertOk(res, `transfer→${to}`), key };
   }
 
   /** Verify an AIN transfer by tx hash: returns {from,to,value} if finalized/executed. */
@@ -327,6 +342,7 @@ export class AinLedger implements Ledger {
       [`${MARKET}/nodes/$addr`, 'auth.addr === $addr'],
       [`${MARKET}/supersedes/$old_id/$new_id`, "auth.addr !== ''"],
       [`${MARKET}/subscriptions/$node/$branch`, 'auth.addr === $node'],
+      [`${MARKET}/retires/$patch_id/$author`, 'auth.addr === $author'],
     ];
     const op_list = rules.map(([ref, write]) => ({ type: 'SET_RULE', ref, value: { '.rule': { write } } }));
     const res = await this.ain.sendTransaction({ operation: { type: 'SET', op_list }, ...this.tx() });
@@ -409,6 +425,14 @@ export class AinLedger implements Ledger {
         const s = body as unknown as SubscriptionRecord;
         ref = `${MARKET}/subscriptions/${this.identity.address}/${keyOf(s.branch)}`;
         txHash = await this.set(ref, s);
+        break;
+      }
+      // A takedown of one's own knowledge: the write rule keys it by the retiring address, and only a record whose
+      // author is the anchor's author is honoured when the catalogue is derived (node/market.ts).
+      case 'retire': {
+        const r = body as unknown as RetireRecord;
+        ref = `${MARKET}/retires/${keyOf(r.patch_id)}/${this.identity.address}`;
+        txHash = await this.set(ref, r);
         break;
       }
     }
