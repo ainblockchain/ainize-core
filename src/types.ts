@@ -402,6 +402,14 @@ export interface PeerInfo {
    * download and attestation routed by address. Without this the two cases are indistinguishable.
    */
   instance?: string;
+  /**
+   * What this node offers the people who publish through it (item 307). The split a teacher is shown was the local
+   * operator's config value, take it or leave it, and there was no surface anywhere comparing what another node
+   * offers — the person contributing the data had no lever and no market. `teach` is the share of a sale this node
+   * pays the teacher; `royalty` and `verifier` are what its anchors promise ancestors and verifiers.
+   * Absent on a node that does not accept contributions, and on every record written before the field.
+   */
+  shares?: { teach?: number; royalty: number; verifier: number };
   last_seen: number;
 }
 
@@ -700,11 +708,23 @@ export interface TeachConfig {
   /** The three effort presets. `lr` is fixed for all three — nobody has measured that changing it helps. */
   effort: { quick: TeachEffortPreset; balanced: TeachEffortPreset; thorough: TeachEffortPreset; lr: number };
   /** CHECKING budget — independent of dataset size, so a 1000-question lesson holds the runtime lock no longer than an 8-question one. */
-  check: { callBudget: number; sampleRows: number; chatFormRows: number; parentSamplesMax: number; lockTargetMs: number; lockAbortMs: number };
+  check: { callBudget: number; sampleRows: number; chatFormRows: number; parentSamplesMax: number; lockTargetMs: number; lockAbortMs: number;
+    /**
+     * How long a lesson waits for a BUSY shared model before it is saved unchecked (item 244). A model OUTAGE has had
+     * a 15-minute grace since the beginning; a busy runtime was retried for ever, so a 3 a.m. bake could sit behind
+     * verification of its own yesterday's version with a terminal that said nothing. Default 30 min.
+     */
+    lockGraceMs: number };
   /** Interactive preflight sampling. */
   preflight: { sampleRows: number; perCall: number };
   /** Total questions the queue may hold across all waiting lessons. */
   queuedRowsMax: number;
+  /**
+   * Teaching keys this node does not ration (item 246): the daily lesson limit is meant to stop a stranger filling
+   * the GPU, and it locked the operator out of their OWN node after one failed bake and one retry — with no reset
+   * time anywhere. The node's own identity is always trusted; add the keys you teach with here.
+   */
+  trustedKeys?: string[];
   /**
    * Feature flag `teach.lineage` (lineage design §18): while false the node refuses `base_ids` on a teach job and the
    * web hides "Build on this" / the basket base row / `--on`. Off until the runtime stack (L2) and the on-top trainer
