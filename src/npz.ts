@@ -6,6 +6,7 @@
  */
 import { openSync, readSync, closeSync, fstatSync, writeFileSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
+import { bf16Bits } from './lineage.js';
 
 interface ZipEntry {
   name: string;
@@ -291,4 +292,38 @@ export function writeNpz(path: string, members: NpzMemberSpec[]): void {
   eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(0, 4); eocd.writeUInt16LE(0, 6); eocd.writeUInt16LE(members.length, 8); eocd.writeUInt16LE(members.length, 10);
   eocd.writeUInt32LE(cd.length, 12); eocd.writeUInt32LE(offset, 16); eocd.writeUInt16LE(0, 20);
   writeFileSync(path, Buffer.concat([...locals, cd, eocd]));
+}
+
+/**
+ * Row-level agreement between two knowledge files (§9 step 2, and the evidence behind "these two really do
+ * disagree"): over the addresses both files touch, how many hold bf16-identical `after` values.
+ *
+ * bf16 is the comparison unit because that is what the table stores (patch_hook.py:98) — two files whose float32
+ * `after` differ in the dropped 16 bits are the same row as far as the model is concerned.
+ */
+export function valuesEqualCount(pathA: string, pathB: string): { shared: number; equal: number; differ: number; dim: number } {
+  const a = loadAfter(pathA), b = loadAfter(pathB);
+  const dim = Math.min(a.dim, b.dim);
+  const index = new Map<string, number>();
+  for (let i = 0; i < a.addrs.length; i++) index.set(String(a.addrs[i]), i);
+  let shared = 0, equal = 0;
+  for (let j = 0; j < b.addrs.length; j++) {
+    const i = index.get(String(b.addrs[j]));
+    if (i === undefined) continue;
+    shared++;
+    let same = true;
+    for (let d = 0; d < dim && same; d++) same = bf16Bits(a.after[i * a.dim + d]) === bf16Bits(b.after[j * b.dim + d]);
+    if (same) equal++;
+  }
+  return { shared, equal, differ: shared - equal, dim };
+}
+
+/** `addrs` + the `after` matrix of one file (float32, row-major). */
+function loadAfter(path: string): { addrs: BigInt64Array; after: Float32Array; dim: number } {
+  const addrs = readNpzAddrs(path);
+  const { header, body } = readNpzMember(path, 'after');
+  if (!/^[<|=]f4$/.test(header.descr)) throw new Error(`npz: after dtype ${header.descr} unsupported (expected float32)`);
+  const aligned = Buffer.alloc(body.length);
+  body.copy(aligned);
+  return { addrs, after: new Float32Array(aligned.buffer, aligned.byteOffset, body.length / 4), dim: header.shape[1] ?? 1 };
 }
