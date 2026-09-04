@@ -113,6 +113,13 @@ export const nodeConfigSchema = z.object({
     allowSelfAttest: z.boolean(),
     intervalMs: positive,
     auto: z.boolean().optional(),
+    /** What this node will spend verifying other people's knowledge (items 332 / 333 / 336). */
+    includeTest: z.boolean().optional(),
+    minPrice: amount.optional(),
+    maxPerHour: z.number().int().min(0).optional(),
+    maxModelMinutesPerHour: z.number().min(0).optional(),
+    window: z.object({ from: z.string().regex(/^\d{2}:\d{2}$/, 'must be HH:MM'), to: z.string().regex(/^\d{2}:\d{2}$/, 'must be HH:MM') }).nullable().optional(),
+    retainBodies: z.boolean().optional(),
   }).optional(),
   market: z.object({
     currency: z.enum(['AIN', 'CREDIT']),

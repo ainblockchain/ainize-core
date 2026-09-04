@@ -89,6 +89,26 @@ export const DEFAULT_TEACH_CONFIG: TeachConfig = {
   lineage: false,
 };
 
+/**
+ * What a verifier will spend on unpaid work for strangers (items 332 / 333 / 336). Every one of these was
+ * unbounded: the round verified hidden test listings, held the shared model in front of the node's own visitors,
+ * and kept every body it ever downloaded.
+ */
+export const DEFAULT_VERIFIER_BUDGET = {
+  includeTest: false,
+  minPrice: '0',
+  maxPerHour: 40,
+  maxModelMinutesPerHour: 10,
+  window: null,
+  retainBodies: false,
+} as const;
+
+/** `cfg.verifier` with the budget defaults filled in (a config.json written before they existed has none of them). */
+export function verifierConfig(cfg: Pick<NodeConfig, 'verifier'>): NonNullable<NodeConfig['verifier']> {
+  const v = cfg.verifier ?? { quorum: 2, allowSelfAttest: false, intervalMs: 5000 };
+  return { ...DEFAULT_VERIFIER_BUDGET, ...v };
+}
+
 /** Operator ceiling for `dataset.maxBytes` — a node may not accept an upload larger than this whatever the config says. */
 export const DATASET_MAX_BYTES_CEILING = 20_000_000;
 
@@ -212,7 +232,7 @@ export function defaultConfig(opts: InitOptions = {}): NodeConfig {
       hookApi: 'http://localhost:8001',
       python: 'python3',
     },
-    verifier: { quorum: 2, allowSelfAttest: false, intervalMs: 5000, auto: true },
+    verifier: { quorum: 2, allowSelfAttest: false, intervalMs: 5000, auto: true, ...DEFAULT_VERIFIER_BUDGET },
     market: {
       currency: opts.currency ?? (ledger === 'ain' ? 'AIN' : 'CREDIT'),
       defaultPrice: '0.1',

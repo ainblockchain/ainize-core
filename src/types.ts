@@ -310,6 +310,30 @@ export interface Attestation {
    * (item 127). New attestations omit it; readers must not present it as money at risk.
    */
   stake?: string;
+  /**
+   * What the run cost (item 340). Without it a 4-question run and a 40-question run on a 2,761-fact knowledge read
+   * identically to every buyer and to any payout rule built on top, which would price the cheapest possible run
+   * exactly like the careful one. `samples_available` is the anchor's whole question set; `samples_run` is what this
+   * verifier actually asked; `duration_ms` is the wall time of the measured section (probe, baseline, apply, score,
+   * restore). Absent on hash-only attestations and on every record written before the field.
+   */
+  duration_ms?: number;
+  samples_run?: number;
+  samples_available?: number;
+  /**
+   * A deliberate re-measurement of something this verifier had already attested (item 339) — after a model update, a
+   * buyer complaint, a doubt. It is NOT a challenge: it does not take the seller off sale. A recheck that FAILS
+   * withdraws this verifier's earlier PASS; one that passes is a visible confirmation.
+   */
+  recheck?: true;
+  /**
+   * How much of the body this verifier scored is its declared parents', address for address (item 303): parent id →
+   * rows this body shares with it, and `rows` is the body's own row count. A one-fact lesson that ships 2,992 of its
+   * base's rows is a resale, and only the node that holds both files can say so. Absent when this node did not hold
+   * a parent body to compare against.
+   */
+  rows_shared_with_parents?: Record<string, number>;
+  rows?: number;
   sig: string;
   created_at: number;
 }
@@ -554,6 +578,28 @@ export interface NodeConfig {
     intervalMs: number;
     /** false = verify only on demand (`ainize patch verify` / POST /api/patches/:id/verify); no background rounds. Default true. */
     auto?: boolean;
+    /**
+     * Verify anchors published with `visibility: 'test'` (item 332). Default FALSE: on the demo chain 209 of 213
+     * anchors were hidden test listings nobody can buy, and every e2e run of every other workstream cost each
+     * verifier a download and a benchmark.
+     */
+    includeTest?: boolean;
+    /** Skip anchors priced below this (decimal string, item 332). Default '0' — verify everything, free items included. */
+    minPrice?: string;
+    /** At most this many items per rolling hour (item 332). Default 40; 0 disables background verification entirely. */
+    maxPerHour?: number;
+    /**
+     * Minutes of shared-model lock this node will spend verifying per rolling hour (items 332 / 333). Default 10 —
+     * node-b spent 54.9 min on one demo afternoon, all of it in front of its own visitors.
+     */
+    maxModelMinutesPerHour?: number;
+    /** Local-time window `{from: 'HH:MM', to: 'HH:MM'}` outside which no background verification starts (item 333). */
+    window?: { from: string; to: string } | null;
+    /**
+     * Keep a body after the attestation that needed it counted (item 336). Default FALSE: a verifier's disk grew to
+     * 932 MB of files it neither wrote nor bought. Bodies this node authored, bought or serves are never dropped.
+     */
+    retainBodies?: boolean;
   };
   market: {
     currency: 'AIN' | 'CREDIT';
