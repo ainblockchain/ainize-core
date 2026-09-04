@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
 import { createIdentity, identityFromPrivateKey } from './identity.js';
+import { NETWORK_MIN_ROYALTY_SHARE, NETWORK_MIN_VERIFIER_SHARE } from './types.js';
 import type { NodeConfig, NodeRole, TeachConfig, TeachEffort } from './types.js';
 
 export const VERSION = '0.1.0';
@@ -175,6 +176,9 @@ export function deriveRowsPerJob(
   return { rows: Math.min(ceiling, Math.max(floor, maxRows)), source: 'measured', ...base };
 }
 
+/** How long raw `events` rows are kept when the operator has not said otherwise (item 128). */
+export const DEFAULT_EVENTS_RETENTION_DAYS = 90;
+
 export function defaultConfig(opts: InitOptions = {}): NodeConfig {
   const home = opts.home ?? DEFAULT_HOME;
   const identity = opts.privateKey ? identityFromPrivateKey(opts.privateKey) : createIdentity();
@@ -183,7 +187,11 @@ export function defaultConfig(opts: InitOptions = {}): NodeConfig {
     name: opts.name ?? `node-${identity.address.slice(2, 8).toLowerCase()}`,
     dataDir: join(home, 'data'),
     port: opts.port ?? 3402,
-    host: opts.host ?? '0.0.0.0',
+    // Loopback by default (item 121). Between `start` and the first `login` a node has no operator password, and a
+    // node bound to every interface is claimed by whoever scans the port first — `POST /api/auth/setup` hands them
+    // a session that can announce, buy, spend the wallet and change the payout address. Going public is a decision
+    // the operator makes on purpose: `ainize init --host 0.0.0.0` (or `--public`), or NGRAM_HOST.
+    host: opts.host ?? '127.0.0.1',
     publicUrl: opts.publicUrl,
     roles: opts.roles ?? ['seller', 'verifier', 'serving'],
     peers: opts.peers ?? [],
@@ -208,11 +216,14 @@ export function defaultConfig(opts: InitOptions = {}): NodeConfig {
     market: {
       currency: opts.currency ?? (ledger === 'ain' ? 'AIN' : 'CREDIT'),
       defaultPrice: '0.1',
-      royaltyShare: 0.3,
+      royaltyShare: NETWORK_MIN_ROYALTY_SHARE,
+      verifierShare: NETWORK_MIN_VERIFIER_SHARE,
       initialCredit: '100',
+      creditGrants: 100,
     },
     teach: structuredClone(DEFAULT_TEACH_CONFIG),
     server: { trustProxy: false },
+    events: { retentionDays: DEFAULT_EVENTS_RETENTION_DAYS },
     gossipIntervalMs: 4000,
     version: VERSION,
   };

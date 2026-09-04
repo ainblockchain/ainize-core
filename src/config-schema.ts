@@ -118,9 +118,14 @@ export const nodeConfigSchema = z.object({
     currency: z.enum(['AIN', 'CREDIT']),
     defaultPrice: amount,
     royaltyShare: share,
+    /** fraction of the seller side paid to the verifiers that attested each sale (item 325); floored at NETWORK_MIN_VERIFIER_SHARE */
+    verifierShare: share.optional(),
     initialCredit: amount,
+    /** how many addresses this node will hand starting credit to before it stops issuing (item 364) */
+    creditGrants: positive.optional(),
   }),
   server: z.object({ trustProxy: z.union([z.boolean(), z.number(), z.string(), z.array(z.string())]) .optional() }).optional(),
+  events: z.object({ retentionDays: positive }).optional(),
   teach: teachSchema.optional(),
   gossipIntervalMs: positive,
   version: z.string().min(1, 'must not be empty'),

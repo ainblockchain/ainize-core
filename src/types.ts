@@ -409,6 +409,8 @@ export interface X402Required {
   gateway_url?: string | null;
   /** how far below the quoted knowledge it sits (1 = its own base) */
   depth: number;
+  /** false when the quoting node has never seen that anchor: its price is in no total and the buyer must find it */
+  known: boolean;
 }
 
 export interface X402Requirement {
@@ -577,6 +579,12 @@ export interface NodeConfig {
    * Behind a reverse proxy set it to the hop count (`1`), `'loopback'`, or the proxy's IP/CIDR list.
    */
   server?: { trustProxy?: boolean | number | string | string[] };
+  /**
+   * Retention of the node's own bookkeeping (item 128). `events.retentionDays` is how long raw rows of the `events`
+   * table are kept before the hourly purge removes them — the demand counters are materialised at write time, so
+   * nothing measured is lost with them. Default 90 days.
+   */
+  events?: { retentionDays: number };
   /** Teach mode (visitor-taught knowledge). Absent in configs written before teach mode → `teachConfig()` fills the defaults. */
   teach?: TeachConfig;
   gossipIntervalMs: number;
