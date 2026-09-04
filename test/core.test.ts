@@ -154,7 +154,11 @@ test('item 153: a challenge holds the sale (sellable false) and names itself; re
 
   const challenged = deriveCatalog(anchors, atts, [], [chRec('p', 'v3', 20)], [], 2)[0];
   assert.equal(challenged.status, 'CHALLENGED');
-  assert.equal(challenged.quorum_ok, true);          // the quorum is still met — what changed is that it is disputed
+  // item 330: the two records that listed it were written BEFORE the challenge, so they answer nothing — the entry
+  // reads CHALLENGED because it WAS on sale, and the count it shows is what has been measured since.
+  assert.equal(challenged.quorum_ok, false);
+  assert.equal(challenged.passed, 0);
+  assert.equal(challenged.stale_attestations, 2);
   assert.equal(challenged.sellable, false);
   assert.equal(challenged.open_challenge?.challenger, 'v3');
   assert.equal(challenged.open_challenge?.reason, 'answers are wrong');
@@ -483,13 +487,34 @@ test('item 242: a challenge on a VERIFYING entry is open (so verifiers re-run it
   assert.equal(e.status, 'VERIFYING');
   assert.equal(e.open_challenge?.created_at, 20, 'a non-listed entry can carry an open challenge');
   assert.equal(e.challenge_log[0].state, 'open');
-  // a re-run after the challenge answers it: dismissed when it passes, upheld when it fails
-  const answered = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11, { passed: false }), attRec('p', 'v2', 30)], [], [chRec('p', 'A', 20, 'the second verifier ran on the wrong model')], [], 2)[0];
+  // item 330 — ONE re-run does not answer a challenge on a quorum of 2: the second slot would be filled by a record
+  // written before the challenge, which answers nothing. It stays open until the quorum is re-established afterwards.
+  const oneRerun = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11, { passed: false }), attRec('p', 'v2', 30)], [], [chRec('p', 'A', 20, 'the second verifier ran on the wrong model')], [], 2)[0];
+  assert.equal(oneRerun.challenge_log[0].state, 'open', 'one fresh PASS is not a quorum');
+  assert.equal(oneRerun.open_challenge?.created_at, 20);
+  assert.equal(oneRerun.passed, 1, 'v1\u2019s pre-challenge record does not count while the challenge is open');
+  assert.equal(oneRerun.stale_attestations, 1);
+  // a quorum of re-runs after the challenge answers it: dismissed when they pass, upheld the moment one fails
+  const answered = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11, { passed: false }), attRec('p', 'v2', 30), attRec('p', 'v1', 31)], [], [chRec('p', 'A', 20, 'the second verifier ran on the wrong model')], [], 2)[0];
   assert.equal(answered.open_challenge, undefined);
   assert.equal(answered.challenge_log[0].state, 'dismissed');
   assert.equal(answered.status, 'LISTED');
   const upheld = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 30, { passed: false })], [], [chRec('p', 'A', 20, 'answers are wrong on 3 of the 8 questions')], [], 2)[0];
   assert.equal(upheld.challenge_log[0].state, 'upheld');
+});
+
+test('item 339: a failing recheck withdraws the same verifier\u2019s earlier PASS without anyone challenging it', () => {
+  const recheck = (pid: string, v: string, at: number, passed: boolean): LedgerRecord<Attestation> => {
+    const r = attRec(pid, v, at, { passed });
+    return { ...r, body: { ...r.body, recheck: true as const } };
+  };
+  const withdrawn = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11), recheck('p', 'v2', 30, false)], [], [], [], 2)[0];
+  assert.equal(withdrawn.passed, 1, 'the recheck replaces v2\u2019s pass, so the quorum is no longer met');
+  assert.equal(withdrawn.status, 'VERIFYING');
+  // a PASSING recheck is a confirmation, not a withdrawal: the first record still counts
+  const confirmed = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11), recheck('p', 'v2', 30, true)], [], [], [], 2)[0];
+  assert.equal(confirmed.passed, 2);
+  assert.equal(confirmed.status, 'LISTED');
 });
 
 test('item 329: two verifiers on one model server are one executor, and a run with no baseline is not counted', () => {

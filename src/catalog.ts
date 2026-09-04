@@ -45,6 +45,12 @@ export interface CatalogEntry {
   executors_unknown: number;
   /** Counted attestations that ran without an un-patched baseline of their own — recorded, never counted (item 329). */
   no_baseline: number;
+  /**
+   * Attestations written BEFORE the open challenge, which therefore answer nothing and do not count (item 330).
+   * Shown on the verification tab as what they are, so "2/2" can never be made of one fresh run plus one record its
+   * own author has publicly disputed.
+   */
+  stale_attestations: number;
   settlements: Settlement[];
   downloads: number;
   revenue: string;
@@ -71,6 +77,10 @@ export function effectiveAttestation(list: Attestation[], challengedAt = 0): Att
     const after = list.filter((a) => a.created_at > challengedAt).sort((a, b) => b.created_at - a.created_at);
     if (after.length) return after[0];
   }
+  // A recheck (item 339) is this verifier saying "I measured it again on purpose". A failing one WITHDRAWS the
+  // earlier pass — that is the whole point of offering it instead of a challenge — so it wins over the first record.
+  const withdrawn = list.filter((a) => a.recheck && !a.passed).sort((a, b) => b.created_at - a.created_at)[0];
+  if (withdrawn) return withdrawn;
   const first = list[0];
   if (first.verified_on === 'hash-only') return list.find((a) => a.verified_on !== 'hash-only') ?? first;
   return first;
@@ -103,7 +113,7 @@ export function deriveCatalog(
     seen.add(rec.body.id);
     byId.set(rec.body.id, {
       anchor: rec.body, status: 'ANNOUNCED', attestations: [], passed: 0, integrity_checks: 0, self_checks: 0, quorum, quorum_ok: false, sellable: false,
-      challenge_log: [], verifiers: [], executors: [], executors_unknown: 0, no_baseline: 0,
+      challenge_log: [], verifiers: [], executors: [], executors_unknown: 0, no_baseline: 0, stale_attestations: 0,
       settlements: [], downloads: 0, revenue: '0', challenges: [], superseded_by: [], supersedes: [], children: [],
       record_hash: rec.hash,
     });
@@ -111,7 +121,7 @@ export function deriveCatalog(
   for (const d of localDrafts) {
     if (!byId.has(d.id)) byId.set(d.id, {
       anchor: d, status: 'DRAFT', attestations: [], passed: 0, integrity_checks: 0, self_checks: 0, quorum, quorum_ok: false, sellable: false,
-      challenge_log: [], verifiers: [], executors: [], executors_unknown: 0, no_baseline: 0,
+      challenge_log: [], verifiers: [], executors: [], executors_unknown: 0, no_baseline: 0, stale_attestations: 0,
       settlements: [], downloads: 0, revenue: '0', challenges: [], superseded_by: [], supersedes: [], children: [], record_hash: '',
     });
   }
@@ -153,10 +163,38 @@ export function deriveCatalog(
     // that decides LISTED, so an attestation already on the chain stops counting the moment this node reads it.
     const isSelf = (a: Attestation) => !allowSelfAttest && sameAddr(a.verifier, e.anchor.author);
     const independent = e.attestations.filter((a) => !isSelf(a));
+    /*
+     * What happened to each challenge: the attestations written after it are the verifiers' answer (item 328) — and
+     * ONLY those (item 330). A challenge used to be cleared by a single fresh PASS from anyone, after which the
+     * second quorum slot was filled by a pre-challenge record, including the challenger's own: on the demo chain
+     * node-b challenged at 11:54:51, node-c alone re-ran at 11:56:06, and the item was LISTED 2/2 with node-b's
+     * 11:53:42 row still counted while node-b's own re-run had not finished. A challenge is a question addressed to
+     * the verifiers, so it is answered when the QUORUM is re-established by measurements taken after it — and one
+     * verifier that fails the re-run upholds it whatever anyone else measured.
+     */
+    const answersFor = (from: number, until: number) =>
+      independent.filter((a) => a.created_at > from && a.created_at < until && a.baseline !== false && (!needsBenchmark || a.verified_on !== 'hash-only'));
+    const byTime = [...e.challenges].sort((a, b) => a.created_at - b.created_at);
+    e.challenge_log = byTime.map((ch, i) => {
+      const answers = answersFor(ch.created_at, byTime[i + 1]?.created_at ?? Infinity);
+      const failed = answers.filter((a) => !a.passed).sort((a, b) => a.created_at - b.created_at)[0];
+      if (failed) return { challenge: ch, state: 'upheld' as const, answered_at: failed.created_at, answered_by: failed.verifier };
+      const passes = answers.filter((a) => a.passed).sort((a, b) => a.created_at - b.created_at);
+      if (passes.length >= quorum) return { challenge: ch, state: 'dismissed' as const, answered_at: passes[quorum - 1].created_at, answered_by: passes[quorum - 1].verifier };
+      return { challenge: ch, state: 'open' as const };
+    });
+    // A challenge nobody has answered yet is open whatever the status is (item 242): an ANNOUNCED / VERIFYING /
+    // REJECTED entry is exactly where the publisher needs the re-run, and the verifier round reads this flag.
+    const openChallenge = e.challenge_log.filter((c) => c.state === 'open').map((c) => c.challenge).sort((a, b) => b.created_at - a.created_at)[0];
+    if (openChallenge) e.open_challenge = openChallenge;
+    // While a challenge is open, an attestation written BEFORE it is not an answer to it and does not count (item 330).
+    // The records stay in `attestations` — they are permanent, and the verification tab shows which ones answered.
+    const current = e.open_challenge ? independent.filter((a) => a.created_at > e.open_challenge!.created_at) : independent;
+    e.stale_attestations = independent.length - current.length;
     // A run on a table where the knowledge was ALREADY applied has no un-patched baseline of its own: the record is
     // kept (it is on the ledger for ever) but it is not a verification of anything (item 329).
-    const counted = independent.filter((a) => a.baseline !== false);
-    e.no_baseline = independent.length - counted.length;
+    const counted = current.filter((a) => a.baseline !== false);
+    e.no_baseline = current.length - counted.length;
     const executed = counted.filter((a) => a.passed && (!needsBenchmark || a.verified_on !== 'hash-only'));
     e.passed = executed.length;
     e.verifiers = [...new Set(executed.map((a) => a.verifier))];
@@ -169,30 +207,22 @@ export function deriveCatalog(
     e.quorum_ok = e.passed >= quorum;
     e.downloads = e.settlements.length;
     e.revenue = e.settlements.reduce((s, x) => s + Number(x.amount || 0), 0).toFixed(6).replace(/\.?0+$/, '') || '0';
-    // What happened to each challenge: the attestations written after it are the verifiers' answer (item 328).
-    const byTime = [...e.challenges].sort((a, b) => a.created_at - b.created_at);
-    e.challenge_log = byTime.map((ch, i) => {
-      const until = byTime[i + 1]?.created_at ?? Infinity;
-      const answers = independent.filter((a) => a.created_at > ch.created_at && a.created_at < until).sort((a, b) => b.created_at - a.created_at);
-      const answer = answers[0];
-      if (!answer) return { challenge: ch, state: 'open' as const };
-      return { challenge: ch, state: (answer.passed ? 'dismissed' : 'upheld') as 'dismissed' | 'upheld', answered_at: answer.created_at, answered_by: answer.verifier };
-    });
-    // A challenge nobody has answered yet is open whatever the status is (item 242): an ANNOUNCED / VERIFYING /
-    // REJECTED entry is exactly where the publisher needs the re-run, and the verifier round reads this flag.
-    const openChallenge = e.challenge_log.filter((c) => c.state === 'open').map((c) => c.challenge).sort((a, b) => b.created_at - a.created_at)[0];
-    if (openChallenge) e.open_challenge = openChallenge;
     if (e.status === 'DRAFT') { e.sellable = false; continue; }
     const failed = counted.filter((a) => !a.passed && (!needsBenchmark || a.verified_on !== 'hash-only')).length;
+    // What the entry had established BEFORE the open challenge discounted those records (item 330): an item that was
+    // on sale and is now disputed reads CHALLENGED, not "back to VERIFYING" — the sale stopped, the history did not.
+    const everPassed = independent.filter((a) => a.baseline !== false && a.passed && (!needsBenchmark || a.verified_on !== 'hash-only'));
     if (e.quorum_ok) {
       e.status = 'LISTED';
       e.listed_at = Math.max(...executed.map((a) => a.created_at));
-      // An unanswered challenge holds the entry until a verifier re-runs it (that re-verification is newer than the
-      // challenge, so it answers it and lifts the status again).
+      // An unanswered challenge holds the entry until a QUORUM of verifiers re-runs it (item 330).
       if (e.open_challenge) e.status = 'CHALLENGED';
       if (e.superseded_by.length && e.status !== 'CHALLENGED') e.status = 'SUPERSEDED';
     } else if (failed >= quorum) {
       e.status = 'REJECTED';
+    } else if (e.open_challenge && everPassed.length >= quorum) {
+      e.status = 'CHALLENGED';
+      e.listed_at = Math.max(...everPassed.map((a) => a.created_at));
     } else if (e.attestations.length > 0) {
       e.status = 'VERIFYING';
     } else {
