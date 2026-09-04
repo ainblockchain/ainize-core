@@ -334,7 +334,10 @@ export function royaltyPlan(
   let truncated = false;
   const queue: string[] = [entry.anchor.id];
   for (let head = 0; head < queue.length; head++) {
-    const e = all.get(queue[head]);
+    // The anchor being sold is read from the ENTRY the caller handed us, never from the map: a caller settling a
+    // draft, a fork or an anchor this node's catalogue snapshot does not carry yet used to walk no parents at all
+    // and silently pay the whole lineage pool to the seller. The map is authoritative for the ancestors only.
+    const e = queue[head] === entry.anchor.id ? entry : all.get(queue[head]);
     if (!e) continue;
     const parents = e.anchor.parents ?? [];
     for (let i = 0; i < parents.length; i++) {

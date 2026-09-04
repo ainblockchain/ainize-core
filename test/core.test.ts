@@ -86,6 +86,19 @@ test('catalog status machine and royalty split', () => {
   assert.equal(split['C'], '7');
   assert.equal(split['B'], '1.5');
   assert.equal(split['A'], '1.5');
+
+  // The sold anchor is read from the ENTRY handed in, never from the map. The teach publish sheet and every settle of
+  // a draft, a fork, or an anchor a peer has not gossiped yet pass an entry the catalogue snapshot does not carry;
+  // the walk used to start at `all.get(id)`, find nothing, and pay the whole lineage pool to the seller.
+  const notInMap = new Map(m);
+  notInMap.delete('c');
+  const offMap = royaltySplit(m.get('c')!, notInMap, 10, 0.3);
+  assert.equal(offMap['B'], '1.5', 'the ancestors are still paid when the sold anchor is not in the map');
+  assert.equal(offMap['A'], '1.5');
+  assert.equal(offMap['C'], '7');
+  // …and a stale copy in the map does not override what the caller handed us
+  const stale = { ...m.get('c')!, anchor: { ...m.get('c')!.anchor, parents: [] } };
+  assert.equal(royaltySplit(m.get('c')!, new Map(m).set('c', stale), 10, 0.3)['A'], '1.5');
 });
 
 // ---------------------------------------------------------------- trust rules (critique 2, items 146 / 153)
