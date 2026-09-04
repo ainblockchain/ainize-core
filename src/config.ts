@@ -85,6 +85,7 @@ export const DEFAULT_TEACH_CONFIG: TeachConfig = {
   check: { callBudget: 68, sampleRows: 24, chatFormRows: 8, parentSamplesMax: 20, lockTargetMs: 300_000, lockAbortMs: 480_000 },
   preflight: { sampleRows: 24, perCall: 8 },
   queuedRowsMax: 2_000,
+  lineage: false,
 };
 
 /** Operator ceiling for `dataset.maxBytes` — a node may not accept an upload larger than this whatever the config says. */
@@ -109,6 +110,7 @@ export function teachConfig(cfg: Pick<NodeConfig, 'teach'>): TeachConfig {
     check: { ...d.check, ...(t.check ?? {}) },
     preflight: { ...d.preflight, ...(t.preflight ?? {}) },
     queuedRowsMax: t.queuedRowsMax ?? d.queuedRowsMax,
+    lineage: t.lineage ?? d.lineage,
   };
 }
 

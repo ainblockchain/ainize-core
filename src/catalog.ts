@@ -225,8 +225,11 @@ export function sanitizeContributors(list: unknown): Contributor[] | undefined {
  *  pass 1b — an ancestor author's slice is divided equally among that author's ancestor anchors, and each anchor
  *            slice is shared with the anchor's `contributors[]` by their shares (a data provider keeps earning
  *            when someone builds on their lesson);
- *  pass 2  — the seller remainder (amount − pool) is carved sequentially for `entry.anchor.contributors[]`:
- *            carve = remainder × c.share; remainder −= carve. A contributor whose address is the seller is skipped.
+ *  pass 2  — the seller remainder (amount − pool) is carved for `entry.anchor.contributors[]` from the FIXED
+ *            remainder: carve = (amount − pool) × c.share. A contributor whose address is the seller is skipped.
+ *            (Before the lineage design §11 fix each carve came off a shrinking remainder, so two 0.5 contributors
+ *            were paid 50 % and 25 %; Σ contributor shares ≤ 1 is validated at createDraft / publish, and clamped
+ *            here again for anchors this node did not write, so Σ carves ≤ remainder holds either way.)
  *
  * Amounts are decimal strings (6 dp, trailing zeros trimmed); zero-valued payouts are omitted except the seller's own line.
  */
@@ -240,7 +243,8 @@ export function royaltySplit(
   const safeShare = (c: Contributor) => (typeof c.share === 'number' && Number.isFinite(c.share) ? Math.min(1, Math.max(0, c.share)) : 0);
   const ancestors: string[] = [];                       // unique ancestor authors, first-seen order
   const anchorsByAuthor = new Map<string, CatalogEntry[]>();
-  const visited = new Set<string>();
+  // the sold anchor is never its own ancestor, whatever a peer-written parent cycle claims
+  const visited = new Set<string>([entry.anchor.id]);
   const walk = (id: string, depth: number) => {
     if (depth > 16) return;
     const e = all.get(id);
@@ -281,11 +285,12 @@ export function royaltySplit(
     if (!anchors.length) add(a, each);
   }
 
-  // pass 2
-  let remainder = amount - pool;
+  // pass 2 — every contributor's share is a fraction of the same fixed remainder (§11 worked example 5)
+  const sellerSide = amount - pool;
+  let remainder = sellerSide;
   for (const c of Array.isArray(entry.anchor.contributors) ? entry.anchor.contributors : []) {
     if (!c || typeof c.address !== 'string' || same(c.address, seller)) continue;
-    const carve = Math.min(remainder, remainder * safeShare(c));
+    const carve = Math.min(remainder, sellerSide * safeShare(c));
     add(c.address, carve);
     remainder -= carve;
   }

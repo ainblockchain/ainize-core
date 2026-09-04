@@ -75,6 +75,8 @@ const teachSchema = z.object({
   }),
   preflight: z.object({ sampleRows: positive, perCall: positive }),
   queuedRowsMax: positive,
+  /** feature flag — `ainize config set teach.lineage true` (lineage design §18) */
+  lineage: z.boolean().optional(),
 });
 
 export const nodeConfigSchema = z.object({

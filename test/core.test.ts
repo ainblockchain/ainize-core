@@ -228,8 +228,43 @@ test('royaltySplit: contributor equal to the seller is skipped, share 0 yields n
   const credited = mkEntry('credit', [], 'node', [teacher(TEACHER, 0)]);
   assert.deepEqual(royaltySplit(credited, new Map([['credit', credited]]), 10, 0.3), { node: '10' });
   const two = mkEntry('two', [], 'node', [teacher(TEACHER, 0.5), teacher(TEACHER2, 0.5)]);
-  // 10 → teacher 5, remainder 5 → teacher2 2.5, node 2.5
-  assert.deepEqual(royaltySplit(two, new Map([['two', two]]), 10, 0.3), { [TEACHER]: '5', [TEACHER2]: '2.5', node: '2.5' });
+  // lineage design §11 example 5 (pass-2 fix): both carve from the FIXED remainder 10 → teacher 5, teacher2 5, node 0
+  // (the pre-fix arithmetic carved the second from a shrinking remainder: 5 / 2.5 / 2.5)
+  assert.deepEqual(royaltySplit(two, new Map([['two', two]]), 10, 0.3), { [TEACHER]: '5', [TEACHER2]: '5', node: '0' });
+  const three = mkEntry('three', [], 'node', [teacher(TEACHER, 0.3), teacher(TEACHER2, 0.2)]);
+  assert.deepEqual(royaltySplit(three, new Map([['three', three]]), 10, 0.3), { [TEACHER]: '3', [TEACHER2]: '2', node: '5' });
+});
+
+test('royaltySplit along a two-parent lineage (lineage design §11 worked examples 1–8): both lines are paid, Σ = price', () => {
+  const sum = (o: Record<string, string>) => Math.round(Object.values(o).reduce((a, b) => a + Number(b), 0) * 1e6) / 1e6;
+  // 3. merge: M (author m) = merge(B, C) where B ← A (a), C by c → ancestors {b, a, c} → 1 each; m 7
+  const A = mkEntry('A', [], 'a'), B = mkEntry('B', ['A'], 'b'), C = mkEntry('C', [], 'c'), M = mkEntry('M', ['B', 'C'], 'm');
+  const m = new Map([['A', A], ['B', B], ['C', C], ['M', M]]);
+  assert.deepEqual(royaltySplit(M, m, 10, 0.3), { b: '1', a: '1', c: '1', m: '7' });
+  assert.equal(sum(royaltySplit(M, m, 10, 0.3)), 10);
+  // 4. same author twice: M2 = merge(A, C2) both by a → a takes the whole pool; pass 1b splits a's slice across the two anchors
+  const C2 = mkEntry('C2', [], 'a', [teacher(TEACHER, 0.5)]);
+  const M2 = mkEntry('M2', ['A', 'C2'], 'm');
+  const m2 = new Map([['A', A], ['C2', C2], ['M2', M2]]);
+  // pool 3 → a's slice 3 → 1.5 per anchor; C2's provider takes 0.5 of C2's 1.5 → 0.75
+  assert.deepEqual(royaltySplit(M2, m2, 10, 0.3), { a: '2.25', [TEACHER]: '0.75', m: '7' });
+  // 1. extend with a seller-side contributor d at 0.5: pool 3 → a; seller remainder 7 → d 3.5, b 3.5
+  const Bd = mkEntry('Bd', ['A'], 'b', [teacher(TEACHER2, 0.5)]);
+  assert.deepEqual(royaltySplit(Bd, new Map([['A', A], ['Bd', Bd]]), 10, 0.3), { a: '3', [TEACHER2]: '3.5', b: '3.5' });
+  // 2. depth: A ← B ← C: pool split {a, b} 1.5 each; c 7
+  const Cc = mkEntry('Cc', ['B'], 'c');
+  assert.deepEqual(royaltySplit(Cc, new Map([['A', A], ['B', B], ['Cc', Cc]]), 10, 0.3), { b: '1.5', a: '1.5', c: '7' });
+  // 6. the seller is an ancestor's author: B2 by b sold by b with parent A2 by b → the slice folds back → b 10
+  const A2 = mkEntry('A2', [], 'b'), B2 = mkEntry('B2', ['A2'], 'b');
+  assert.deepEqual(royaltySplit(B2, new Map([['A2', A2], ['B2', B2]]), 10, 0.3), { b: '10' });
+  // 7. bundle: child C7 (price 5) built on X (author x): pool 1.5 → x; c 3.5 — each sale sums to its own price
+  const X = mkEntry('X', [], 'x'), C7 = mkEntry('C7', ['X'], 'c');
+  assert.deepEqual(royaltySplit(C7, new Map([['X', X], ['C7', C7]]), 5, 0.3), { x: '1.5', c: '3.5' });
+  assert.deepEqual(royaltySplit(X, new Map([['X', X]]), 25, 0.3), { x: '25' });
+  // a cycle in peer-written parents never loops or double-pays
+  const P = mkEntry('P', ['Q'], 'p'), Q = mkEntry('Q', ['P'], 'q');
+  const cyc = royaltySplit(Q, new Map([['P', P], ['Q', Q]]), 10, 0.3);
+  assert.equal(sum(cyc), 10); assert.equal(cyc.p, '3'); assert.equal(cyc.q, '7');
 });
 
 test('royaltySplit: the seller-as-contributor skip is case-insensitive in both passes (spec §7.3)', () => {

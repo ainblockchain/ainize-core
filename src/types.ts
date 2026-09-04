@@ -78,6 +78,21 @@ export const MAX_CONTRIBUTORS = 4;
 /** Where an anchor came from: registered by the operator (default when absent) or taught by a visitor. */
 export type PatchOrigin = 'operator' | 'teach';
 
+/**
+ * Licences a training set (and the knowledge built from it) may carry (lineage design §6.4). The list is closed: an
+ * unknown string is refused at publish (`bad_license`) rather than written into an immutable record nobody can read.
+ *  - CC0 / CC-BY / ODC-By parent → any child licence (attribution travels through `parents[]`);
+ *  - CC-BY-SA parent → the child must be CC-BY-SA with dataset access at least the parent's;
+ *  - Proprietary parent → a child may build on top (the parent earns the lineage share) but ships delta-only: no
+ *    inherited rows in its blob and no inherited benchmark samples on the record.
+ */
+export const DATASET_LICENSES = ['CC0-1.0', 'CC-BY-4.0', 'CC-BY-SA-4.0', 'ODC-By-1.0', 'Proprietary'] as const;
+export type DatasetLicense = (typeof DATASET_LICENSES)[number];
+export function isDatasetLicense(v: unknown): v is DatasetLicense { return typeof v === 'string' && (DATASET_LICENSES as readonly string[]).includes(v); }
+/** Who may read a published training set (lineage design §6.1). Absent on an anchor = `private`. */
+export const DATASET_ACCESS_LEVELS = ['public', 'derivative', 'private'] as const;
+export type DatasetAccess = (typeof DATASET_ACCESS_LEVELS)[number];
+
 /** Public, on-ledger description of a patch (anchor body). */
 export interface PatchAnchor {
   id: string;
@@ -429,6 +444,13 @@ export interface TeachConfig {
   preflight: { sampleRows: number; perCall: number };
   /** Total questions the queue may hold across all waiting lessons. */
   queuedRowsMax: number;
+  /**
+   * Feature flag `teach.lineage` (lineage design §18): while false the node refuses `base_ids` on a teach job and the
+   * web hides "Build on this" / the basket base row / `--on`. Off until the runtime stack (L2) and the on-top trainer
+   * (L3) are verified end to end on the gradient backend; the dataset blob, its access levels and `dataset get` do
+   * not depend on it.
+   */
+  lineage?: boolean;
 }
 
 export interface TeachEffortPreset { maxSteps: number; evalEvery: number }
@@ -516,17 +538,29 @@ export interface TeachDatasetSummary {
   over_cap: number;
   /** Advisory only (design §8.5): accepted questions that share their last three tokens with ≥ 2 others. */
   shared_ending: number;
+  /**
+   * Accepted questions that look like personal information (an e-mail, a phone number, a resident registration number,
+   * a card number that passes Luhn). They train, and they block publishing the training set above `private`
+   * (lineage design §6.5). Absent in reports written before the check existed.
+   */
+  pii?: number;
   langs: Record<TeachDatasetLang, number>;
 }
 
 export type TeachDatasetLang = 'hangul' | 'latin' | 'han' | 'kana' | 'other';
 
 /**
- * Per-source-row status. Only `ok` and `fixed` enter rows.jsonl; `over_cap` is an accepted question that did not fit
+ * Per-source-row status. `ok`, `fixed` and `pii` enter rows.jsonl (a `pii` row trains, but keeps the training set
+ * from being published above `private` until it is removed); `over_cap` is an accepted question that did not fit
  * this node's per-dataset cap.
  */
 export type TeachRowStatus =
-  | 'ok' | 'fixed' | 'duplicate' | 'conflict' | 'too_long' | 'empty' | 'blocked' | 'not_parsed' | 'over_cap';
+  | 'ok' | 'fixed' | 'pii' | 'duplicate' | 'conflict' | 'too_long' | 'empty' | 'blocked' | 'not_parsed' | 'over_cap';
+/** Kinds of personal information the parser looks for (lineage design §6.5). */
+export type TeachPiiKind = 'email' | 'phone' | 'rrn' | 'card';
+/** Row statuses that mean "this question is in rows.jsonl" (the helper every filter should use instead of listing the two or three by hand). */
+export const ACCEPTED_ROW_STATUSES: readonly TeachRowStatus[] = ['ok', 'fixed', 'pii'];
+export const isAcceptedRowStatus = (s: string | undefined): boolean => !!s && (ACCEPTED_ROW_STATUSES as readonly string[]).includes(s);
 
 /** One entry per SOURCE row — accepted or not. `index` is the position in rows.jsonl, null when the row was not accepted. */
 export interface TeachDatasetRow {
@@ -542,6 +576,8 @@ export interface TeachDatasetRow {
   fixes?: string[];
   /** Never blocks training. */
   advisory?: 'shared_ending'[];
+  /** Only with `status: 'pii'` — what was found (the row still trains; it blocks publishing above `private`). */
+  pii?: TeachPiiKind[];
   /** e.g. 'conflicts with line 41', 'answer is 240 characters (40 over the 200 limit)' */
   detail?: string;
   /** ≤ 200 chars, only for not_parsed. */
