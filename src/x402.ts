@@ -58,6 +58,19 @@ export function transferKeyFor(resource: string, nonce: string): string {
 }
 
 /**
+ * The key a ROYALTY transfer is written under (finding 314): `/transfer/$seller/$creator/payout_<settle>_<to>`.
+ *
+ * The buyer's payment is bound to its quote by `transferKeyFor`, and the seller's onward transfers to the creators
+ * had no key at all — one anonymous push id per creator, no memo, nothing joining it to the sale it honoured. So
+ * 34 reported royalties, 29 the seller claimed and 8 visible in chain state could be reconciled by nobody: an
+ * ancestor had no evidence to dispute with and an honest seller had none to show. Derived from the settle hash, so
+ * either party can look the transfer up without an index.
+ */
+export function payoutKeyFor(settleHash: string, to: string): string {
+  return `payout_${settleHash.replace(/[^a-zA-Z0-9]/g, '').slice(0, 40)}_${to.replace(/[^a-zA-Z0-9]/g, '').slice(-12)}`;
+}
+
+/**
  * What an ain-transfer payer signs so the seller knows the person presenting the tx hash is the person who paid.
  * Every transfer on an AIN chain is public, so the hash alone is a bearer ticket; this digest is not (finding 344).
  */

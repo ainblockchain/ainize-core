@@ -300,6 +300,33 @@ export class AinLedger implements Ledger {
     return { tx_hash: AinLedger.assertOk(res, `transfer→${to}`), key };
   }
 
+  /**
+   * Several transfers in ONE transaction (finding 366).
+   *
+   * A sale with three ancestors wrote three separate transfers, each paying its own gas — the product's own
+   * estimate is ~0.19 AIN of gas around a 0.1 AIN purchase at `min_gas_price 500`, so a family of three
+   * multiplied the loss by three. One `SET` with an op_list per payee costs one write.
+   */
+  async transferMany(items: { to: string; value: number; key: string }[]): Promise<{ tx_hash: string }> {
+    if (!items.length) throw new Error('no transfers to make');
+    const from = this.identity.address;
+    for (const it of items) {
+      if (!/^[A-Za-z0-9_-]{1,120}$/.test(it.key)) throw new Error(`invalid transfer key ${JSON.stringify(it.key)}`);
+      if (!(it.value > 0)) throw new Error(`non-positive transfer value ${it.value}`);
+    }
+    const op_list = items.map((it) => ({ type: 'SET_VALUE', ref: `/transfer/${from}/${it.to}/${it.key}/value`, value: it.value }));
+    const res = await this.ain.sendTransaction({ operation: { type: 'SET', op_list }, ...this.tx() });
+    return { tx_hash: AinLedger.assertOk(res, `transfer x${items.length}`) };
+  }
+
+  /** The chain's own minimum gas price, straight from `/blockchain_params` — measured, never assumed (finding 366). */
+  async minGasPrice(): Promise<number | null> {
+    try {
+      const v = await this.getValue('/blockchain_params/resource/min_gas_price');
+      return typeof v === 'number' && Number.isFinite(v) ? v : null;
+    } catch { return null; }
+  }
+
   /** Verify an AIN transfer by tx hash: returns {from,to,value} if finalized/executed. */
   async verifyTransfer(txHash: string): Promise<{ from: string; to: string; value: number; key: string } | null> {
     const info = await this.ain.getTransactionByHash(txHash);
