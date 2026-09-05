@@ -520,6 +520,21 @@ export interface X402Requirement {
   self_contained?: boolean;
   /** The nonce is spent by the settlement that redeems it; a rejected attempt leaves it usable (finding 272). */
   single_use?: boolean;
+  /**
+   * What is being sold, on the quote itself (finding 236). An x402 client is not an ainize node: it has the 402 and
+   * nothing else, so a script assembling a set from ids seen last week used to buy and stack retired versions with
+   * no way to know, and no agent could decide on lineage, licence or who is paid BEFORE paying.
+   *
+   * `status` is the seller's own catalogue status (`LISTED` | `SUPERSEDED`); `superseded_by` names the newer
+   * versions; `license` is the anchor's SPDX id; `lineage.standalone` is true when nothing is declared underneath;
+   * `split_preview` is the same `royaltyPlan` that will settle the sale, so the buyer sees the split before paying
+   * and can compare it with the one on the receipt afterwards.
+   */
+  status?: string;
+  superseded_by?: string[];
+  license?: string | null;
+  lineage?: { parents: { id: string; author: string | null; name: string | null }[]; standalone: boolean };
+  split_preview?: { address: string; name: string | null; role: string; amount: string }[];
 }
 
 export interface X402Payload {
