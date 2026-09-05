@@ -73,7 +73,11 @@ export const DEFAULT_TEACH_CONFIG: TeachConfig = {
   draftTtlDays: 7,
   backend: 'gradient',
   stubOffline: false,
-  trainer: { container: 'flashtrain', script: 'train/teach.py', gpus: '4,5,6', maxSteps: 20, timeoutMs: 1_800_000, minFreeGpuMb: 20_000, idleStopMin: 30 },
+  // `gpus` is deliberately UNSET (item 145). It used to ship as '4,5,6' — a claim about one host that was wrong for
+  // the cluster this repo ships, which serves the model on GPUs 4,5: the trainer's own free-memory pre-check then
+  // watched the GPUs vLLM was holding and blocked every lesson with a megabyte figure that never named the cause.
+  // An operator naming the trainer's GPUs is the only way this can be right, and gradient training refuses without it.
+  trainer: { container: 'flashtrain', script: 'train/teach.py', gpus: '', maxSteps: 20, timeoutMs: 1_800_000, minFreeGpuMb: 20_000, idleStopMin: 30 },
   locality: { prompts: DEFAULT_LOCALITY_PROMPTS, minSame: 11 },
   dataset: {
     maxBytes: 4_000_000, maxSourceLines: 50_000, maxRows: 2_000,
@@ -97,6 +101,13 @@ export const DEFAULT_TEACH_CONFIG: TeachConfig = {
  * and kept every body it ever downloaded.
  */
 export const DEFAULT_VERIFIER_BUDGET = {
+  /**
+   * Stop attesting below this balance where the chain charges gas (item 341). An attestation is a write the VERIFIER
+   * signs and pays for — the plan's "seller pays gas" cannot hold for a record the verifier signs — so the unpaid
+   * role becomes a net-paying one the moment gas is real, and `verifier.auto` would spend the account to nothing,
+   * taking announce, settle and payout with it. No effect on the local ledger, which has no gas.
+   */
+  minBalance: 1,
   includeTest: false,
   minPrice: '0',
   maxPerHour: 40,
@@ -198,6 +209,23 @@ export function deriveRowsPerJob(
   const budget_s = cfg.trainer.timeoutMs / 1000 - (l50 ?? 0);
   const maxRows = Math.floor(budget_s / (passes * s90) / Math.max(1, cfg.rowsPerJob.safetyFactor));
   return { rows: Math.min(ceiling, Math.max(floor, maxRows)), source: 'measured', ...base };
+}
+
+/** `"4,5"` / `"0,1,2,3"` → a set of GPU indices; anything unparseable is simply not in the set. */
+export function gpuSet(spec: string | undefined | null): Set<string> {
+  return new Set((spec ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+}
+
+/**
+ * The GPUs `teach.trainer.gpus` and `runtime.gpus` have in common (item 145).
+ *
+ * deploy/README states the rule — "never let the two sets overlap: the trainer loads a second copy of the model's
+ * memory table and would starve vLLM" — and nothing in the code checked it. The shipped default named the very GPUs
+ * the shipped cluster serves on, and the README then invited the operator to switch gradient training on.
+ */
+export function gpuOverlap(servingGpus: string | undefined | null, trainerGpus: string | undefined | null): string[] {
+  const serving = gpuSet(servingGpus);
+  return [...gpuSet(trainerGpus)].filter((g) => serving.has(g));
 }
 
 /** How long raw `events` rows are kept when the operator has not said otherwise (item 128). */

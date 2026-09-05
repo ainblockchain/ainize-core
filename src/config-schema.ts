@@ -110,6 +110,8 @@ export const nodeConfigSchema = z.object({
     hookApi: url.optional(),
     python: z.string().optional(),
     patchDir: z.string().optional(),
+    /** GPUs the serving instance occupies, e.g. "4,5" — checked against teach.trainer.gpus (item 145) */
+    gpus: z.string().optional(),
     sampling: z.record(z.string(), z.unknown()).optional(),
   }).optional(),
   verifier: z.object({
@@ -119,6 +121,8 @@ export const nodeConfigSchema = z.object({
     allowSelfAttest: z.boolean(),
     intervalMs: positive,
     auto: z.boolean().optional(),
+    /** stop attesting below this balance on a gas-charging chain (item 341); 0 = never stop */
+    minBalance: z.number().min(0, 'must not be negative').optional(),
     /** What this node will spend verifying other people's knowledge (items 332 / 333 / 336). */
     includeTest: z.boolean().optional(),
     minPrice: amount.optional(),

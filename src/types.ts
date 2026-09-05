@@ -357,6 +357,35 @@ export interface Settlement {
   created_at: number;
 }
 
+/**
+ * A settled buyer says the knowledge they paid for did not work, and the seller answers on the same record (item 347).
+ *
+ * /terms is honest that "refunds are at the seller's discretion and are not mediated by the protocol" and that a
+ * payment "is final once executed" — and non-delivery IS recoverable, because a settled buyer can always fetch the
+ * body with a signed header. What was unrecoverable, and unrecorded, is the one thing a buyer cannot get back:
+ * quality. The only lever was `patch challenge`, which spends other operators' GPU time, pays the challenger nothing,
+ * takes the seller off sale, and appears on no buyer surface — so a bad seller's record stayed clean.
+ *
+ * A dispute is NOT a challenge: it does not stop sales and it asks nobody to re-run a benchmark. It is a record that
+ * a sale was contested, counted per seller, with the seller's answer beside it.
+ */
+export interface Dispute {
+  patch_id: string;
+  /** 'claim' by the buyer; 'answer' by the seller of the same settlement. */
+  role: 'claim' | 'answer';
+  author: string;
+  /** The settlement this is about — the buyer's proof they paid for it. */
+  settle_hash: string;
+  /** At least DISPUTE_MIN_REASON characters: what did not work. */
+  reason: string;
+  created_at: number;
+  sig: string;
+}
+
+/** A dispute has to say something: the same floor a challenge reason has. */
+export const DISPUTE_MIN_REASON = 20;
+export const DISPUTE_MAX_REASON = 1000;
+
 export interface Challenge {
   patch_id: string;
   challenger: string;
@@ -427,7 +456,7 @@ export type NodeRole = 'seller' | 'verifier' | 'serving' | 'gateway';
 
 /** Generic signed ledger record (local-ledger mode). Content-addressed by `hash`. */
 /** Every kind of record the ledger holds — the closed list `ainize ledger ls --kind` offers. */
-export const RECORD_KINDS = ['anchor', 'attest', 'settle', 'challenge', 'branch', 'node', 'supersede', 'subscribe', 'retire'] as const;
+export const RECORD_KINDS = ['anchor', 'attest', 'settle', 'challenge', 'branch', 'node', 'supersede', 'subscribe', 'retire', 'dispute'] as const;
 export type RecordKind = (typeof RECORD_KINDS)[number];
 
 export interface LedgerRecord<T = unknown> {
@@ -587,6 +616,12 @@ export interface NodeConfig {
      *  vLLM instance: it carries the apply/remove requests and the cross-process runtime lock, so two servers
      *  (e.g. the demo cluster on its own GPUs and a second instance) never write into each other's table. */
     patchDir?: string;         // /mnt/newdata/qwen3.8/ple_patch_e2e
+    /**
+     * Which GPUs the serving instance `api` addresses occupies, e.g. "4,5" (item 145). Nothing on the node can
+     * discover this — the model is behind an HTTP URL — and without it the teach trainer cannot be stopped from
+     * being pointed at the GPUs that serve every verification and live test. Unset = no cross-check is possible.
+     */
+    gpus?: string;
     /** Sampling + degeneracy guard per generation path (D1). Omit for the measured defaults. */
     sampling?: RuntimeSampling;
   };
@@ -602,6 +637,13 @@ export interface NodeConfig {
     intervalMs: number;
     /** false = verify only on demand (`ainize patch verify` / POST /api/patches/:id/verify); no background rounds. Default true. */
     auto?: boolean;
+    /**
+     * Stop attesting below this balance, on a chain that charges gas (item 341). An attestation is a write the
+     * VERIFIER signs and pays for, and `verifier.auto` would keep writing until the account was empty — at which
+     * point every other thing this node does on chain (announce, settle, payout) fails too. Ignored on the local
+     * ledger, which has no gas.
+     */
+    minBalance?: number;
     /**
      * Verify anchors published with `visibility: 'test'` (item 332). Default FALSE: on the demo chain 209 of 213
      * anchors were hidden test listings nobody can buy, and every e2e run of every other workstream cost each
