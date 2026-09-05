@@ -166,6 +166,16 @@ export interface PatchAnchor {
   topic_path: string;        // ain-js knowledge topic path (e.g. "finance/krx")
   recipe?: PatchRecipe;      // transfer recipe R (전이 계층)
   created_at: number;
+  /**
+   * The day the DATA this was trained on is true of — `YYYY-MM-DD`, declared by the publisher (item 267).
+   *
+   * `created_at` is when the file was registered and `listed_at` is the newest attestation, so a knowledge baked
+   * from yesterday's feed and registered this morning looked exactly as fresh as one baked an hour ago, and the
+   * only place the data's own date lived was the name string every daily publisher invented for themselves
+   * ("krx-codes-2026-09-03"). Optional, because most knowledge has no such day; absent on every anchor written
+   * before the field, which is why a reader must fall back to `created_at` and say which one it is showing.
+   */
+  as_of?: string;
   /** Address-set sketch (MinHash-like) for cheap conflict pre-checks across peers. */
   addr_sketch?: number[];
   /** Deposit / bond for verification (청구항 19). */
