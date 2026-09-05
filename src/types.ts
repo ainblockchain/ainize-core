@@ -27,6 +27,19 @@ export const PATCH_STATUSES: PatchStatus[] = [
 /** Billing model for a patch (청구항 12). */
 export type BillingModel = 'per_download' | 'per_apply_hour' | 'per_hit';
 
+/**
+ * The billing models a node can actually charge (finding 360).
+ *
+ * All three were offered on the publish form and printed to buyers as "pay per hour loaded" and "pay per use",
+ * and `settlePayment` charges `anchor.price` exactly once per 402 round and copies `billing` onto the settlement.
+ * Nothing anywhere meters an hour or a use. So a seller picked a revenue model the product does not implement,
+ * and a buyer was told they were paying by the hour when they had paid once. Anchors already carrying one of the
+ * other two keep it — the record is immutable — and every surface says what really happens to them; they are no
+ * longer OFFERED to anyone new.
+ */
+export const BILLING_IMPLEMENTED: readonly BillingModel[] = ['per_download'];
+export const billingImplemented = (b: unknown): b is BillingModel => BILLING_IMPLEMENTED.includes(b as BillingModel);
+
 export interface BenchmarkSpec {
   /** Stable id of the benchmark schema (e.g. "krx-ticker-codes"). Patches sharing a schema are comparable/conflicting. */
   schema: string;
