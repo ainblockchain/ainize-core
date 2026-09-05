@@ -435,6 +435,12 @@ export interface PeerInfo {
   chain_id?: number;
   model?: string;             // id_M served by this node (if serving)
   branches: string[];         // subscribed branches
+  /**
+   * What this node has LOADED in its serving model right now, bottom first (item 234). `branches` records what a
+   * node once subscribed to; a router that sends traffic on that alone can pick a node serving the superseded bake,
+   * a rejected one, or nothing at all. Absent on records written before the field.
+   */
+  applied?: string[];
   blobs: string[];            // sha256 of patch bodies held
   /** sha256 of published training sets held (sliced to 40, like `blobs`); a child node re-advertises the parent sets it fetched. */
   datasets?: string[];
