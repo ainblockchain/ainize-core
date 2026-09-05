@@ -120,6 +120,26 @@ test('preStateSha256 hashes the base state by address, whatever order the rows a
   assert.equal(bf16Bits(1 + 2 ** -7), 0x3f81);
 });
 
+/*
+ * The one value two languages have to agree on. `pre_state_sha256` is written by the trainer (Python, numpy) and
+ * RECOMPUTED here from the published bytes when a file is imported (packages/node/src/api.ts), so a divergence of a
+ * single rounding rule turns every imported lesson into a different lesson. The same three rows and the same hex are
+ * asserted from the Python side in `scripts/lineage-test.py` (test_pre_state_golden); change one and the other fails.
+ * Row 1 carries both bf16 ties — 1.00390625 rounds DOWN to even, 1.01171875 rounds UP to even — which is the part of
+ * the rule a re-implementation gets wrong.
+ */
+test('preStateSha256: the golden vector shared with the trainer (scripts/lineage-test.py)', () => {
+  const addrs = new BigInt64Array([5n, 1n, 3n]);
+  const before = new Float32Array([
+    1, -2.5, 0, 1.5,
+    1.00390625, 1.01171875, -0, 65504,
+    2, 1.0009765625, -1, 0.333333333333,
+  ]);
+  assert.equal(preStateSha256(addrs, before, 4), 'bcbd203647cc64fd7e9bc69556f711893d28176f57fa6163a3c0121c82df4c11');
+  assert.equal(bf16Bits(1.00390625), 0x3f80, 'a tie whose upper half is even rounds down');
+  assert.equal(bf16Bits(1.01171875), 0x3f82, 'a tie whose upper half is odd rounds up');
+});
+
 test('merkleRoot: an empty set, one leaf and an odd count all have a defined root (inclusion proofs for a private base)', () => {
   assert.equal(merkleRoot([]), sha256Hex(''));
   assert.equal(merkleRoot(['a']), sha256Hex('a'));
