@@ -414,6 +414,15 @@ export interface BranchInfo {
   owner: string;
   patch_ids: string[];
   created_at: number;
+  /**
+   * `test` = a fixture track: hidden from /network, from `GET /api/branches` (unless `include_test`) and from the
+   * router, exactly as `PatchAnchor.visibility` already worked for anchors (item 269). The one page that sells
+   * "subscribe to a track" was 32 throwaway `e2e/*` rows and three real ones, and nothing could ever be taken off.
+   * Absent = `public`, so every track written before this field keeps reading as one.
+   */
+  visibility?: 'public' | 'test';
+  /** The owner is done with this track: kept on the record, hidden from the lists and never routed to (item 269). */
+  archived?: boolean;
 }
 
 export interface PeerInfo {
