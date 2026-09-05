@@ -17,7 +17,7 @@ import { canonicalJson, pythonJson, sha256Hex } from './canonical.js';
 import { signMessage, verifyMessage } from './identity.js';
 import type { Ledger, LedgerEvents, LedgerInfo, RecordBody, SubscriptionRecord, SupersedeRecord } from './ledger.js';
 import type {
-  Attestation, BranchInfo, Challenge, LedgerRecord, PatchAnchor, PeerInfo, RecordKind, Settlement,
+  Attestation, BranchInfo, Challenge, Dispute, LedgerRecord, PatchAnchor, PeerInfo, RecordKind, Settlement,
 } from './types.js';
 import type { Identity } from './identity.js';
 
@@ -170,6 +170,7 @@ export class LocalLedger implements Ledger {
   attestations(patchId?: string) { return this.byKind<Attestation>('attest', patchId ? (b) => b.patch_id === patchId : undefined); }
   settlements(patchId?: string) { return this.byKind<Settlement>('settle', patchId ? (b) => b.patch_id === patchId : undefined); }
   challenges(patchId?: string) { return this.byKind<Challenge>('challenge', patchId ? (b) => b.patch_id === patchId : undefined); }
+  disputes(patchId?: string) { return this.byKind<Dispute>('dispute', patchId ? (b) => b.patch_id === patchId : undefined); }
   branches() { return this.byKind<BranchInfo>('branch'); }
   nodes() { return this.byKind<PeerInfo>('node'); }
   supersedes() { return this.byKind<SupersedeRecord>('supersede'); }

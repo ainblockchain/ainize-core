@@ -23,7 +23,7 @@ import { canonicalJson, sha256Hex } from './canonical.js';
 import { MAX_CONTRIBUTORS } from './types.js';
 import type { Ledger, LedgerEvents, LedgerInfo, RecordBody, RetireRecord, SubscriptionRecord, SupersedeRecord } from './ledger.js';
 import type {
-  Attestation, BranchInfo, Challenge, LedgerRecord, PatchAnchor, PeerInfo, RecordKind, Settlement,
+  Attestation, BranchInfo, Challenge, Dispute, LedgerRecord, PatchAnchor, PeerInfo, RecordKind, Settlement,
 } from './types.js';
 import type { Identity } from './identity.js';
 
@@ -193,6 +193,10 @@ export function recordsFromMarketState(market: any): LedgerRecord[] {
   for (const [id, m] of Object.entries<any>(market?.retires ?? {}))
     for (const [author, r] of Object.entries<any>(m)) if (r && typeof r.patch_id === 'string')
       push('retire', `${MARKET}/retires/${id}/${author}`, r, author, r.created_at ?? 0);
+  for (const [id, m] of Object.entries<any>(market?.disputes ?? {}))
+    for (const [settleHash, per] of Object.entries<any>(m ?? {}))
+      for (const [author, d] of Object.entries<any>(per ?? {})) if (d && typeof d.reason === 'string')
+        push('dispute', `${MARKET}/disputes/${id}/${settleHash}/${author}`, d, author, d.created_at ?? 0);
   for (const [node, m] of Object.entries<any>(market?.subscriptions ?? {}))
     for (const [b, s] of Object.entries<any>(m)) {
       const related = branchTs.get(s?.branch) ?? 0;
@@ -356,6 +360,8 @@ export class AinLedger implements Ledger {
       [`${MARKET}/supersedes/$old_id/$new_id`, "auth.addr !== ''"],
       [`${MARKET}/subscriptions/$node/$branch`, 'auth.addr === $node'],
       [`${MARKET}/retires/$patch_id/$author`, 'auth.addr === $author'],
+      // item 347 — a contested sale and the seller's answer to it, one write-once slot per party.
+      [`${MARKET}/disputes/$patch_id/$settle_hash/$author`, 'auth.addr === $author && data === null'],
     ];
     const op_list = rules.map(([ref, write]) => ({ type: 'SET_RULE', ref, value: { '.rule': { write } } }));
     const res = await this.ain.sendTransaction({ operation: { type: 'SET', op_list }, ...this.tx() });
@@ -411,6 +417,12 @@ export class AinLedger implements Ledger {
         const s = body as unknown as Settlement;
         ref = `${MARKET}/settlements/${s.patch_id}/${keyOf(s.tx_hash || String(ts))}`;
         txHash = await this.set(ref, s);
+        break;
+      }
+      case 'dispute': {
+        const d = body as unknown as Dispute;
+        ref = `${MARKET}/disputes/${d.patch_id}/${keyOf(d.settle_hash)}/${this.identity.address}`;
+        txHash = await this.set(ref, d);
         break;
       }
       case 'challenge': {
@@ -492,6 +504,7 @@ export class AinLedger implements Ledger {
   attestations(patchId?: string) { return this.byKind<Attestation>('attest', patchId ? (b) => b.patch_id === patchId : undefined); }
   settlements(patchId?: string) { return this.byKind<Settlement>('settle', patchId ? (b) => b.patch_id === patchId : undefined); }
   challenges(patchId?: string) { return this.byKind<Challenge>('challenge', patchId ? (b) => b.patch_id === patchId : undefined); }
+  disputes(patchId?: string) { return this.byKind<Dispute>('dispute', patchId ? (b) => b.patch_id === patchId : undefined); }
   branches() { return this.byKind<BranchInfo>('branch'); }
   nodes() { return this.byKind<PeerInfo>('node'); }
   supersedes() { return this.byKind<SupersedeRecord>('supersede'); }

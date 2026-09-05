@@ -12,7 +12,7 @@
  * "카탈로그 = 원장의 anchor 블록 집합" (청구항 19).
  */
 import type {
-  Attestation, BranchInfo, Challenge, LedgerRecord, PatchAnchor, PeerInfo, RecordKind, Settlement,
+  Attestation, BranchInfo, Challenge, Dispute, LedgerRecord, PatchAnchor, PeerInfo, RecordKind, Settlement,
 } from './types.js';
 
 export interface SupersedeRecord {
@@ -82,6 +82,8 @@ export interface Ledger {
   attestations(patchId?: string): Promise<LedgerRecord<Attestation>[]>;
   settlements(patchId?: string): Promise<LedgerRecord<Settlement>[]>;
   challenges(patchId?: string): Promise<LedgerRecord<Challenge>[]>;
+  /** Contested sales and the sellers' answers (item 347). Optional: a ledger written before the kind existed has none. */
+  disputes?(patchId?: string): Promise<LedgerRecord<Dispute>[]>;
   branches(): Promise<LedgerRecord<BranchInfo>[]>;
   nodes(): Promise<LedgerRecord<PeerInfo>[]>;
   supersedes(): Promise<LedgerRecord<SupersedeRecord>[]>;
