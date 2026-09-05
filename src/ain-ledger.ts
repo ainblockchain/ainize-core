@@ -260,7 +260,26 @@ export class AinLedger implements Ledger {
   private async set(ref: string, value: unknown): Promise<string> {
     const encoded = toAin(value);
     const res = await this.ain.db.ref(ref).setValue({ value: encoded, ...this.tx() });
+    this.noteGas(res);                                   // what this write cost, measured (finding 366)
     return AinLedger.assertOk(res, ref);
+  }
+
+  /**
+   * What this node's chain writes have actually cost (finding 366).
+   *
+   * The publish form gives no pricing guidance and the default price is 0.1, while the product's own estimate is
+   * ~0.19 AIN of gas around a 0.1 AIN purchase at `min_gas_price 500` — so on a real network the default price
+   * makes every sale a loss. Nothing here is estimated: `gas_cost_total` comes back on every write this node
+   * makes, and this is the average of the ones it has seen. The dev chain sends `gas_price 0`, so it measures 0
+   * and the warning correctly says nothing.
+   */
+  private gas = { writes: 0, total: 0 };
+  gasStats(): { writes: number; total: number; avg: number } | null {
+    return this.gas.writes ? { writes: this.gas.writes, total: Math.round(this.gas.total * 1e6) / 1e6, avg: Math.round((this.gas.total / this.gas.writes) * 1e6) / 1e6 } : null;
+  }
+  private noteGas(res: any): void {
+    const cost = Number(res?.result?.gas_cost_total ?? res?.result?.result_list?.['0']?.gas_cost_total ?? NaN);
+    if (Number.isFinite(cost)) { this.gas.writes++; this.gas.total += cost; }
   }
 
   private static assertOk(res: any, what: string): string {
@@ -297,6 +316,7 @@ export class AinLedger implements Ledger {
     if (!(value > 0)) throw new Error(`non-positive transfer value ${value}`);
     const from = this.identity.address;
     const res = await this.ain.db.ref(`/transfer/${from}/${to}/${key}/value`).setValue({ value, ...this.tx() });
+    this.noteGas(res);
     return { tx_hash: AinLedger.assertOk(res, `transfer→${to}`), key };
   }
 
@@ -316,6 +336,7 @@ export class AinLedger implements Ledger {
     }
     const op_list = items.map((it) => ({ type: 'SET_VALUE', ref: `/transfer/${from}/${it.to}/${it.key}/value`, value: it.value }));
     const res = await this.ain.sendTransaction({ operation: { type: 'SET', op_list }, ...this.tx() });
+    this.noteGas(res);
     return { tx_hash: AinLedger.assertOk(res, `transfer x${items.length}`) };
   }
 
