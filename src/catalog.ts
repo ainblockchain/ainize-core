@@ -52,8 +52,26 @@ export interface CatalogEntry {
    */
   stale_attestations: number;
   settlements: Settlement[];
+  /**
+   * Sales to somebody else. A settlement whose buyer IS the seller is not demand and is not counted here (item
+   * 365): three self-buys used to read SOLD 5 on every peer and lift the item up the "Most popular" row that the
+   * landing page shows, for the price of nothing at all on a free item.
+   */
   downloads: number;
+  /** Distinct buyers behind those sales — what a ranking should read, since one buyer is one vote. */
+  buyers: number;
+  /** Gross: what buyers paid. Still the sum of the settlement amounts, minus self-purchases. */
   revenue: string;
+  /**
+   * What the anchor's author actually received, from the royalty map on each settlement (item 194): a derivative
+   * that pays 65 % upstream showed "revenue 10 CREDIT" on a sale that put 3.5 in its author's pocket, and no
+   * surface anywhere printed the difference. `revenue` remains the gross figure every older client reads.
+   */
+  revenue_net: string;
+  /** Gross − net: the creator share these sales owed other people. */
+  revenue_shared: string;
+  /** Self-purchases excluded from every figure above, so an inflated history can still be seen for what it was. */
+  self_purchases: number;
   challenges: Challenge[];
   superseded_by: string[];
   supersedes: string[];
@@ -114,7 +132,8 @@ export function deriveCatalog(
     byId.set(rec.body.id, {
       anchor: rec.body, status: 'ANNOUNCED', attestations: [], passed: 0, integrity_checks: 0, self_checks: 0, quorum, quorum_ok: false, sellable: false,
       challenge_log: [], verifiers: [], executors: [], executors_unknown: 0, no_baseline: 0, stale_attestations: 0,
-      settlements: [], downloads: 0, revenue: '0', challenges: [], superseded_by: [], supersedes: [], children: [],
+      settlements: [], downloads: 0, buyers: 0, revenue: '0', revenue_net: '0', revenue_shared: '0', self_purchases: 0,
+      challenges: [], superseded_by: [], supersedes: [], children: [],
       record_hash: rec.hash,
     });
   }
@@ -122,7 +141,8 @@ export function deriveCatalog(
     if (!byId.has(d.id)) byId.set(d.id, {
       anchor: d, status: 'DRAFT', attestations: [], passed: 0, integrity_checks: 0, self_checks: 0, quorum, quorum_ok: false, sellable: false,
       challenge_log: [], verifiers: [], executors: [], executors_unknown: 0, no_baseline: 0, stale_attestations: 0,
-      settlements: [], downloads: 0, revenue: '0', challenges: [], superseded_by: [], supersedes: [], children: [], record_hash: '',
+      settlements: [], downloads: 0, buyers: 0, revenue: '0', revenue_net: '0', revenue_shared: '0', self_purchases: 0,
+      challenges: [], superseded_by: [], supersedes: [], children: [], record_hash: '',
     });
   }
   // Every attestation is kept per verifier here; which one of a verifier's attestations counts is decided below,
@@ -205,8 +225,23 @@ export function deriveCatalog(
     e.integrity_checks = counted.filter((a) => a.verified_on === 'hash-only').length;
     e.self_checks = e.attestations.length - independent.length;
     e.quorum_ok = e.passed >= quorum;
-    e.downloads = e.settlements.length;
-    e.revenue = e.settlements.reduce((s, x) => s + Number(x.amount || 0), 0).toFixed(6).replace(/\.?0+$/, '') || '0';
+    // Items 365 / 194 — a sale to yourself is not a sale, and a sale is not what the seller was paid.
+    const fmtAmt = (n: number) => n.toFixed(6).replace(/\.?0+$/, '') || '0';
+    const real = e.settlements.filter((x) => !sameAddr(x.buyer, x.seller));
+    e.self_purchases = e.settlements.length - real.length;
+    e.downloads = real.length;
+    e.buyers = new Set(real.map((x) => (x.buyer ?? '').toLowerCase())).size;
+    e.revenue = fmtAmt(real.reduce((s, x) => s + Number(x.amount || 0), 0));
+    // The author's own line in the royalty map is what reached them; a settlement written before the map existed
+    // paid the whole amount to the seller, which is what the fallback says.
+    const netOf = (x: Settlement) => {
+      const entries = Object.entries(x.royalty ?? {});
+      if (!entries.length) return Number(x.amount || 0);
+      return entries.filter(([addr]) => sameAddr(addr, e.anchor.author)).reduce((n, [, amt]) => n + Number(amt || 0), 0);
+    };
+    const net = real.reduce((s, x) => s + netOf(x), 0);
+    e.revenue_net = fmtAmt(net);
+    e.revenue_shared = fmtAmt(Math.max(0, real.reduce((s, x) => s + Number(x.amount || 0), 0) - net));
     if (e.status === 'DRAFT') { e.sellable = false; continue; }
     const failed = counted.filter((a) => !a.passed && (!needsBenchmark || a.verified_on !== 'hash-only')).length;
     // What the entry had established BEFORE the open challenge discounted those records (item 330): an item that was
