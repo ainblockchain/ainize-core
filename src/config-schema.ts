@@ -72,9 +72,15 @@ const teachSchema = z.object({
   check: z.object({
     callBudget: positive, sampleRows: positive, chatFormRows: positive, parentSamplesMax: nonNegative,
     lockTargetMs: positive, lockAbortMs: positive,
+    /** how long a lesson waits for a BUSY shared model before it is saved unchecked (item 244) */
+    lockGraceMs: positive.optional(),
   }),
   preflight: z.object({ sampleRows: positive, perCall: positive }),
   queuedRowsMax: positive,
+  /** run the live side-effect check on a placeholder lesson from the demo trainer (item 247) */
+  checkStubLessons: z.boolean().optional(),
+  /** teaching keys this node does not ration (item 246) */
+  trustedKeys: z.array(z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'must be an AIN address (0x + 40 hex)')).optional(),
   /** feature flag — `ainize config set teach.lineage true` (lineage design §18) */
   lineage: z.boolean().optional(),
 });

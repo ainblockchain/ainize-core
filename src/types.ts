@@ -410,6 +410,16 @@ export interface PeerInfo {
    * Absent on a node that does not accept contributions, and on every record written before the field.
    */
   shares?: { teach?: number; royalty: number; verifier: number };
+  /**
+   * The other half of this node's terms (item 368): how many independent attestations it requires before it calls
+   * anything verified, what it prices a knowledge at when the publisher names none, and whether it takes lessons
+   * from visitors at all. With `shares` and `ledger` this is everything a creator choosing where to publish, or a
+   * buyer wondering what their money splits into, has to compare — and none of it was published before.
+   * Absent on a node running an older build: a consumer must say "not published", never assume a default.
+   */
+  quorum?: number;
+  default_price?: string;
+  accepts_contributions?: boolean;
   last_seen: number;
 }
 
@@ -725,6 +735,14 @@ export interface TeachConfig {
    * time anywhere. The node's own identity is always trusted; add the keys you teach with here.
    */
   trustedKeys?: string[];
+  /**
+   * Run the live side-effect check even when the trainer is the demo stub (item 247). Default false: a stub writes a
+   * PLACEHOLDER body, so the ~4.5 minutes of shared model the check costs measure nothing — the held lock is the only
+   * real thing about the run, and the lesson ends `NEEDS_MORE · taught 0/18` on a page that says nothing was trained.
+   * A test rig with a fake model server sets this, because the check path is what it asserts; a node pointed at a
+   * production vLLM should not.
+   */
+  checkStubLessons?: boolean;
   /**
    * Feature flag `teach.lineage` (lineage design §18): while false the node refuses `base_ids` on a teach job and the
    * web hides "Build on this" / the basket base row / `--on`. Off until the runtime stack (L2) and the on-top trainer

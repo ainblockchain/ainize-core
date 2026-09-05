@@ -83,9 +83,11 @@ export const DEFAULT_TEACH_CONFIG: TeachConfig = {
   },
   rowsPerJob: { floorGradient: 8, floorStub: 200, ceiling: 1_000, safetyFactor: 2 },
   effort: { quick: { maxSteps: 8, evalEvery: 2 }, balanced: { maxSteps: 20, evalEvery: 2 }, thorough: { maxSteps: 40, evalEvery: 4 }, lr: 2e-3 },
-  check: { callBudget: 68, sampleRows: 24, chatFormRows: 8, parentSamplesMax: 20, lockTargetMs: 300_000, lockAbortMs: 480_000 },
+  check: { callBudget: 68, sampleRows: 24, chatFormRows: 8, parentSamplesMax: 20, lockTargetMs: 300_000, lockAbortMs: 480_000, lockGraceMs: 30 * 60_000 },
   preflight: { sampleRows: 24, perCall: 8 },
   queuedRowsMax: 2_000,
+  checkStubLessons: false,
+  trustedKeys: [],
   lineage: false,
 };
 
@@ -131,6 +133,8 @@ export function teachConfig(cfg: Pick<NodeConfig, 'teach'>): TeachConfig {
     check: { ...d.check, ...(t.check ?? {}) },
     preflight: { ...d.preflight, ...(t.preflight ?? {}) },
     queuedRowsMax: t.queuedRowsMax ?? d.queuedRowsMax,
+    checkStubLessons: t.checkStubLessons ?? d.checkStubLessons,
+    trustedKeys: t.trustedKeys ?? d.trustedKeys,
     lineage: t.lineage ?? d.lineage,
   };
 }
