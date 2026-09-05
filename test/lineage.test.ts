@@ -9,10 +9,14 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   accessRank, answersHash, bf16Bits, capBenchmarkSamples, deltaOnlyParent, fromAin, licenseCompatible, lineageIds,
   lineageProblems, merkleRoot, preStateSha256, sha256Hex, TEACH_SAMPLES_ON_CHAIN, toAin, withEmptyArrays,
-  royaltyPlan, royaltySplit,
+  royaltyPlan, royaltySplit, inspectNpz, readNpzMember,
   type BenchmarkSample, type CatalogEntry, type Contributor, type PatchAnchor,
 } from '../src/index.js';
 
@@ -138,6 +142,65 @@ test('preStateSha256: the golden vector shared with the trainer (scripts/lineage
   assert.equal(preStateSha256(addrs, before, 4), 'bcbd203647cc64fd7e9bc69556f711893d28176f57fa6163a3c0121c82df4c11');
   assert.equal(bf16Bits(1.00390625), 0x3f80, 'a tie whose upper half is even rounds down');
   assert.equal(bf16Bits(1.01171875), 0x3f82, 'a tie whose upper half is odd rounds up');
+});
+
+/*
+ * The npz the trainer writes is produced by numpy's `savez`, and every npz these tests have ever read was written by
+ * `writeNpz` in this package. Those are two different ZIP writers: numpy opens each member with force_zip64, which
+ * puts ZIP64 extra fields in the local headers and sizes in a data descriptor, and a hand-rolled central-directory
+ * reader is exactly the kind of code that copes with one and not the other. `addrs`/`before`/`after` have been read
+ * from real lessons for a long time, but the `meta` member is new in L3 and had never been read from a numpy file at
+ * all — so this writes one the way `teach.py` does and reads it back through the functions the node actually uses.
+ *
+ * Skipped, not failed, where python3+numpy is absent: it is a cross-language check and a machine without the other
+ * language cannot make it. The trainer container runs the same assertion from the Python side.
+ */
+test('readNpzMember parses a numpy-written npz, meta member included, and preStateSha256 agrees across languages', (t) => {
+  const env = { ...process.env, PYTHONDONTWRITEBYTECODE: '1' };   // loading a script by path must not leave a __pycache__ in scripts/
+  const py = spawnSync('python3', ['-c', 'import numpy'], { encoding: 'utf8', env });
+  if (py.status !== 0) return t.skip('python3 with numpy is not available here');
+  const dir = mkdtempSync(join(tmpdir(), 'npz-xlang-'));
+  try {
+    const script = `
+import numpy as np, json
+rng = np.random.default_rng(7)
+N, D = 1500, 160
+addrs = np.sort(rng.choice(10_000_000, size=N, replace=False)).astype(np.int64)
+before = rng.standard_normal((N, D)).astype(np.float32)
+meta = json.dumps({"export": "delta", "base_stack": [{"patch_id": "b", "patch_sha256": "ab" * 32}],
+                   "pre_state_sha256": "x", "trainer_version": "teach.py-2"})
+np.savez(${JSON.stringify(join(dir, 'lesson.npz'))}, addrs=addrs, before=before, after=before + 0.5,
+         meta=np.frombuffer(meta.encode("utf-8"), dtype=np.uint8))
+`;
+    const w = spawnSync('python3', ['-c', script], { encoding: 'utf8', env });
+    assert.equal(w.status, 0, w.stderr);
+    const npz = join(dir, 'lesson.npz');
+    const info = inspectNpz(npz);
+    assert.deepEqual(info.members.map((m) => m.name), ['addrs', 'before', 'after', 'meta']);
+    assert.equal(info.rows, 1500);
+    assert.equal(info.rowDim, 160);
+    const m = readNpzMember(npz, 'meta');
+    assert.equal(m.header.descr, '|u1', 'np.uint8 must present as |u1 with a 1-D shape');
+    assert.equal(m.header.shape.length, 1);
+    const parsed = JSON.parse(m.body.toString('utf8')) as { export: string; trainer_version: string };
+    assert.equal(parsed.export, 'delta');
+    assert.equal(parsed.trainer_version, 'teach.py-2');
+    // and the hash the node recomputes on `patch import` reads the same bytes numpy wrote
+    const a = readNpzMember(npz, 'addrs'); const b = readNpzMember(npz, 'before');
+    const addrs = new BigInt64Array(a.body.buffer, a.body.byteOffset, a.body.length / 8);
+    const before = new Float32Array(b.body.buffer, b.body.byteOffset, b.body.length / 4);
+    const ts = preStateSha256(addrs, before, b.header.shape[1]);
+    const fromPy = spawnSync('python3', ['-c',
+      `import sys; sys.path.insert(0, ${JSON.stringify(join(process.cwd(), '..', '..', 'scripts'))}); ` +
+      `import importlib.util, numpy as np; ` +
+      `s = importlib.util.spec_from_file_location('v', ${JSON.stringify(join(process.cwd(), '..', '..', 'scripts', 'lineage-verify.py'))}); ` +
+      `v = importlib.util.module_from_spec(s); s.loader.exec_module(v); ` +
+      `z = np.load(${JSON.stringify(npz)}); print(v.pre_state_sha256(z['addrs'], z['before']))`], { encoding: 'utf8', env });
+    assert.equal(fromPy.status, 0, fromPy.stderr);
+    assert.equal(ts, fromPy.stdout.trim(), 'the two languages must hash the same numpy bytes identically');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('merkleRoot: an empty set, one leaf and an odd count all have a defined root (inclusion proofs for a private base)', () => {
