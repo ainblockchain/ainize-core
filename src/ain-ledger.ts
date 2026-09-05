@@ -21,7 +21,7 @@
 import { createRequire } from 'node:module';
 import { canonicalJson, sha256Hex } from './canonical.js';
 import { MAX_CONTRIBUTORS } from './types.js';
-import type { Ledger, LedgerEvents, LedgerInfo, RecordBody, RetireRecord, SubscriptionRecord, SupersedeRecord } from './ledger.js';
+import type { Ledger, LedgerEvents, LedgerInfo, PayoutRecord, PriceRecord, RecordBody, RetireRecord, SubscriptionRecord, SupersedeRecord } from './ledger.js';
 import type {
   Attestation, BranchInfo, Challenge, Dispute, LedgerRecord, PatchAnchor, PeerInfo, RecordKind, Settlement,
 } from './types.js';
@@ -190,6 +190,13 @@ export function recordsFromMarketState(market: any): LedgerRecord[] {
       const ts = typeof s.created_at === 'number' && s.created_at > 0 ? s.created_at : related ? related + 1 : 0;
       push('supersede', `${MARKET}/supersedes/${o}/${nw}`, s, anchorAuthor.get(nw) ?? '', ts);
     }
+  for (const [id, per] of Object.entries<any>(market?.prices ?? {}))
+    for (const [author, slots] of Object.entries<any>(per ?? {}))
+      for (const [key, p] of Object.entries<any>(slots ?? {})) if (p && typeof p.price === 'string')
+        push('price', `${MARKET}/prices/${id}/${author}/${key}`, p, author, p.created_at ?? 0);
+  for (const [hash, per] of Object.entries<any>(market?.payouts ?? {}))
+    for (const [to, p] of Object.entries<any>(per ?? {})) if (p && typeof p.tx_hash === 'string')
+      push('payout', `${MARKET}/payouts/${hash}/${to}`, p, p.seller ?? '', p.created_at ?? 0);
   for (const [id, m] of Object.entries<any>(market?.retires ?? {}))
     for (const [author, r] of Object.entries<any>(m)) if (r && typeof r.patch_id === 'string')
       push('retire', `${MARKET}/retires/${id}/${author}`, r, author, r.created_at ?? 0);
@@ -362,6 +369,10 @@ export class AinLedger implements Ledger {
       [`${MARKET}/retires/$patch_id/$author`, 'auth.addr === $author'],
       // item 347 — a contested sale and the seller's answer to it, one write-once slot per party.
       [`${MARKET}/disputes/$patch_id/$settle_hash/$author`, 'auth.addr === $author && data === null'],
+      // item 278 — only the anchor's own author re-prices it, and every price ever set stays on the record.
+      [`${MARKET}/prices/$patch_id/$author/$created_at`, 'auth.addr === $author && data === null'],
+      // item 314 — the seller's own record of the royalty transfer that honoured a settlement, keyed by settle hash.
+      [`${MARKET}/payouts/$settle_hash/$to`, 'auth.addr === newData.seller || data === null'],
     ];
     const op_list = rules.map(([ref, write]) => ({ type: 'SET_RULE', ref, value: { '.rule': { write } } }));
     const res = await this.ain.sendTransaction({ operation: { type: 'SET', op_list }, ...this.tx() });
@@ -461,6 +472,21 @@ export class AinLedger implements Ledger {
         const r = body as unknown as RetireRecord;
         ref = `${MARKET}/retires/${keyOf(r.patch_id)}/${this.identity.address}`;
         txHash = await this.set(ref, r);
+        break;
+      }
+      // A re-pricing of one's own knowledge (item 278). One write-once child per `created_at`, so the whole price
+      // history is on the chain and a discount can be checked against the price it was discounted from.
+      case 'price': {
+        const p = body as unknown as PriceRecord;
+        ref = `${MARKET}/prices/${keyOf(p.patch_id)}/${this.identity.address}/${keyOf(String(p.created_at || ts))}`;
+        txHash = await this.set(ref, p);
+        break;
+      }
+      // What the seller actually transferred for one settlement (item 314) — the join between a promise and money.
+      case 'payout': {
+        const p = body as unknown as PayoutRecord;
+        ref = `${MARKET}/payouts/${keyOf(p.settle_hash)}/${keyOf(p.to)}`;
+        txHash = await this.set(ref, { ...p, seller: this.identity.address });
         break;
       }
     }
