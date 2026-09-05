@@ -27,19 +27,6 @@ export const PATCH_STATUSES: PatchStatus[] = [
 /** Billing model for a patch (청구항 12). */
 export type BillingModel = 'per_download' | 'per_apply_hour' | 'per_hit';
 
-/**
- * The billing models a node can actually charge (finding 360).
- *
- * All three were offered on the publish form and printed to buyers as "pay per hour loaded" and "pay per use",
- * and `settlePayment` charges `anchor.price` exactly once per 402 round and copies `billing` onto the settlement.
- * Nothing anywhere meters an hour or a use. So a seller picked a revenue model the product does not implement,
- * and a buyer was told they were paying by the hour when they had paid once. Anchors already carrying one of the
- * other two keep it — the record is immutable — and every surface says what really happens to them; they are no
- * longer OFFERED to anyone new.
- */
-export const BILLING_IMPLEMENTED: readonly BillingModel[] = ['per_download'];
-export const billingImplemented = (b: unknown): b is BillingModel => BILLING_IMPLEMENTED.includes(b as BillingModel);
-
 export interface BenchmarkSpec {
   /** Stable id of the benchmark schema (e.g. "krx-ticker-codes"). Patches sharing a schema are comparable/conflicting. */
   schema: string;
@@ -419,23 +406,6 @@ export interface Challenge {
   created_at: number;
 }
 
-/**
- * What a track costs to subscribe to, per period (finding 359).
- *
- * There was no subscription: `BranchInfo` carried name, description, context and ids and no terms at all, prices
- * are per anchor, and a track owner who curates other people's knowledge received nothing for curating. So the
- * most loyal customer was the most expensive one — every day of a daily track is a fresh full-price sale — and
- * nobody was paid to keep a channel good. This is the CURATION fee, paid to the track's owner once per period; the
- * knowledge on the track is still bought from whoever published it, because it is theirs.
- */
-export interface SubscriptionTerms {
-  /** What one period of curation costs, in `currency`. '0' is a free track that still has terms. */
-  price: string;
-  currency: string;
-  /** How long one payment lasts, in days. */
-  period_days: number;
-}
-
 export interface BranchInfo {
   name: string;               // e.g. "law/KR"
   description: string;
@@ -443,8 +413,6 @@ export interface BranchInfo {
   context: Record<string, string>;
   owner: string;
   patch_ids: string[];
-  /** The curation fee, set by the owner (finding 359). Absent = free to subscribe, as every track was before. */
-  terms?: SubscriptionTerms;
   created_at: number;
   /**
    * `test` = a fixture track: hidden from /network, from `GET /api/branches` (unless `include_test`) and from the
