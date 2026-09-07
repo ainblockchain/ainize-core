@@ -10,3 +10,7 @@ export * from './catalog.js';
 export * from './lineage.js';
 export * from './config.js';
 export * from './config-schema.js';
+export * from './events.js';
+export * from './bytes.js';
+export * from './teach-auth.js';
+export * from './ops.js';
