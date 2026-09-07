@@ -20,7 +20,7 @@ const BUILD_STAMP: string | undefined = (() => {
   try { return statSync(fileURLToPath(import.meta.url)).mtime.toISOString(); } catch { return undefined; }
 })();
 export function buildStamp(): string | undefined { return BUILD_STAMP; }
-export const DEFAULT_HOME = process.env.NGRAM_HOME ?? join(homedir(), '.ngram');
+export const DEFAULT_HOME = process.env.AINIZE_HOME ?? join(homedir(), '.ainize');
 
 export function configPath(home = DEFAULT_HOME): string {
   return join(home, 'config.json');
@@ -250,7 +250,7 @@ export function defaultConfig(opts: InitOptions = {}): NodeConfig {
     // Loopback by default (item 121). Between `start` and the first `login` a node has no operator password, and a
     // node bound to every interface is claimed by whoever scans the port first — `POST /api/auth/setup` hands them
     // a session that can announce, buy, spend the wallet and change the payout address. Going public is a decision
-    // the operator makes on purpose: `ainize init --host 0.0.0.0` (or `--public`), or NGRAM_HOST.
+    // the operator makes on purpose: `ainize init --host 0.0.0.0` (or `--public`), or AINIZE_HOST.
     host: opts.host ?? '127.0.0.1',
     publicUrl: opts.publicUrl,
     roles: opts.roles ?? ['seller', 'verifier', 'serving'],
@@ -337,24 +337,24 @@ export function mergeConfigChanges(onDisk: NodeConfig, boot: NodeConfig, live: N
 
 /** Environment overrides (handy for docker / multi-node demos). */
 export function applyEnv(cfg: NodeConfig, env = process.env): NodeConfig {
-  if (env.NGRAM_PORT) cfg.port = Number(env.NGRAM_PORT);
-  if (env.NGRAM_HOST) cfg.host = env.NGRAM_HOST;
-  if (env.NGRAM_PEERS) cfg.peers = env.NGRAM_PEERS.split(',').map((s) => s.trim()).filter(Boolean);
-  if (env.NGRAM_LEDGER === 'ain' || env.NGRAM_LEDGER === 'local') cfg.ledger.kind = env.NGRAM_LEDGER;
+  if (env.AINIZE_PORT) cfg.port = Number(env.AINIZE_PORT);
+  if (env.AINIZE_HOST) cfg.host = env.AINIZE_HOST;
+  if (env.AINIZE_PEERS) cfg.peers = env.AINIZE_PEERS.split(',').map((s) => s.trim()).filter(Boolean);
+  if (env.AINIZE_LEDGER === 'ain' || env.AINIZE_LEDGER === 'local') cfg.ledger.kind = env.AINIZE_LEDGER;
   if (env.AIN_PROVIDER_URL) cfg.ledger.ain!.providerUrl = env.AIN_PROVIDER_URL;
-  if (env.NGRAM_ROLES) cfg.roles = env.NGRAM_ROLES.split(',') as NodeRole[];
-  if (env.NGRAM_PUBLIC_URL) cfg.publicUrl = env.NGRAM_PUBLIC_URL;
-  if (env.NGRAM_RUNTIME_REPO) cfg.runtime = { ...cfg.runtime, repo: env.NGRAM_RUNTIME_REPO };
-  if (env.NGRAM_RUNTIME_API) cfg.runtime = { ...cfg.runtime, api: env.NGRAM_RUNTIME_API };
-  if (env.NGRAM_RUNTIME_PATCH_DIR) cfg.runtime = { ...cfg.runtime, patchDir: env.NGRAM_RUNTIME_PATCH_DIR };
-  if (env.NGRAM_TEACH_BACKEND === 'stub' || env.NGRAM_TEACH_BACKEND === 'gradient') cfg.teach = { ...teachConfig(cfg), backend: env.NGRAM_TEACH_BACKEND };
-  if (env.NGRAM_TEACH_ENABLED === '1' || env.NGRAM_TEACH_ENABLED === '0') cfg.teach = { ...teachConfig(cfg), enabled: env.NGRAM_TEACH_ENABLED === '1' };
-  if (env.NGRAM_TRUST_PROXY !== undefined) cfg.server = { ...(cfg.server ?? {}), trustProxy: parseTrustProxy(env.NGRAM_TRUST_PROXY) };
-  if (env.NGRAM_TEACH_STUB_OFFLINE === '1' || env.NGRAM_TEACH_STUB_OFFLINE === '0') cfg.teach = { ...teachConfig(cfg), stubOffline: env.NGRAM_TEACH_STUB_OFFLINE === '1' };
+  if (env.AINIZE_ROLES) cfg.roles = env.AINIZE_ROLES.split(',') as NodeRole[];
+  if (env.AINIZE_PUBLIC_URL) cfg.publicUrl = env.AINIZE_PUBLIC_URL;
+  if (env.AINIZE_RUNTIME_REPO) cfg.runtime = { ...cfg.runtime, repo: env.AINIZE_RUNTIME_REPO };
+  if (env.AINIZE_RUNTIME_API) cfg.runtime = { ...cfg.runtime, api: env.AINIZE_RUNTIME_API };
+  if (env.AINIZE_RUNTIME_PATCH_DIR) cfg.runtime = { ...cfg.runtime, patchDir: env.AINIZE_RUNTIME_PATCH_DIR };
+  if (env.AINIZE_TEACH_BACKEND === 'stub' || env.AINIZE_TEACH_BACKEND === 'gradient') cfg.teach = { ...teachConfig(cfg), backend: env.AINIZE_TEACH_BACKEND };
+  if (env.AINIZE_TEACH_ENABLED === '1' || env.AINIZE_TEACH_ENABLED === '0') cfg.teach = { ...teachConfig(cfg), enabled: env.AINIZE_TEACH_ENABLED === '1' };
+  if (env.AINIZE_TRUST_PROXY !== undefined) cfg.server = { ...(cfg.server ?? {}), trustProxy: parseTrustProxy(env.AINIZE_TRUST_PROXY) };
+  if (env.AINIZE_TEACH_STUB_OFFLINE === '1' || env.AINIZE_TEACH_STUB_OFFLINE === '0') cfg.teach = { ...teachConfig(cfg), stubOffline: env.AINIZE_TEACH_STUB_OFFLINE === '1' };
   return cfg;
 }
 
-/** `NGRAM_TRUST_PROXY`: `0|false` → off, `1|2|…` → hop count, `true` → every proxy (only behind a proxy that overwrites X-Forwarded-For), anything else → Express IP/CIDR/`loopback` list. */
+/** `AINIZE_TRUST_PROXY`: `0|false` → off, `1|2|…` → hop count, `true` → every proxy (only behind a proxy that overwrites X-Forwarded-For), anything else → Express IP/CIDR/`loopback` list. */
 export function parseTrustProxy(v: string): boolean | number | string {
   const s = v.trim();
   if (s === '' || s === '0' || s.toLowerCase() === 'false') return false;
