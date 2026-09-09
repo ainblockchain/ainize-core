@@ -11,6 +11,6 @@
  */
 export * from './types.js';
 export type {
-  Ledger, LedgerEvents, LedgerInfo, LedgerRecord, PayoutRecord, PriceRecord, RecordBody,
+  Ledger, LedgerEvents, LedgerInfo, PayoutRecord, PriceRecord, RecordBody,
   RetireRecord, SubscriptionRecord, SupersedeRecord,
 } from './ledger.js';
