@@ -191,9 +191,9 @@ np.savez(${JSON.stringify(join(dir, 'lesson.npz'))}, addrs=addrs, before=before,
     const before = new Float32Array(b.body.buffer, b.body.byteOffset, b.body.length / 4);
     const ts = preStateSha256(addrs, before, b.header.shape[1]);
     const fromPy = spawnSync('python3', ['-c',
-      `import sys; sys.path.insert(0, ${JSON.stringify(join(process.cwd(), '..', '..', 'scripts'))}); ` +
+      `import sys; sys.path.insert(0, ${JSON.stringify(join(process.cwd(), 'scripts'))}); ` +
       `import importlib.util, numpy as np; ` +
-      `s = importlib.util.spec_from_file_location('v', ${JSON.stringify(join(process.cwd(), '..', '..', 'scripts', 'lineage-verify.py'))}); ` +
+      `s = importlib.util.spec_from_file_location('v', ${JSON.stringify(join(process.cwd(), 'scripts', 'lineage-verify.py'))}); ` +
       `v = importlib.util.module_from_spec(s); s.loader.exec_module(v); ` +
       `z = np.load(${JSON.stringify(npz)}); print(v.pre_state_sha256(z['addrs'], z['before']))`], { encoding: 'utf8', env });
     assert.equal(fromPy.status, 0, fromPy.stderr);

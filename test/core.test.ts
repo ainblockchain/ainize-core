@@ -38,7 +38,7 @@ test('LocalLedger appends signed records and imports the prototype chain intact'
   const id = createIdentity();
   const ledger = new LocalLedger(':memory:', id);
   await ledger.init();
-  const n = await ledger.importPrototypeLedger(join(here, '..', '..', 'node', 'fixtures', 'prototype-ledger.jsonl'));
+  const n = await ledger.importPrototypeLedger(join(here, 'fixtures', 'prototype-ledger.jsonl'));
   assert.equal(n, 7);
   const v = await ledger.verify();
   assert.deepEqual(v.errors, []);
