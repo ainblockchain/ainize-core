@@ -185,10 +185,19 @@ export function recordsFromMarketState(market: any): LedgerRecord[] {
   }
   for (const [addr, n] of Object.entries<any>(market?.nodes ?? {})) push('node', `${MARKET}/nodes/${addr}`, n, addr, n.last_seen ?? 0);
   for (const [o, m] of Object.entries<any>(market?.supersedes ?? {}))
-    for (const [nw, s] of Object.entries<any>(m)) {
-      const related = Math.max(attestTs.get(nw) ?? 0, anchorTs.get(nw) ?? 0);
-      const ts = typeof s.created_at === 'number' && s.created_at > 0 ? s.created_at : related ? related + 1 : 0;
-      push('supersede', `${MARKET}/supersedes/${o}/${nw}`, s, anchorAuthor.get(nw) ?? '', ts);
+    for (const [nw, slot] of Object.entries<any>(m)) {
+      // Two shapes, as with attestations: the legacy slot IS the record (nobody's address in the path, so the
+      // best `author` available is the new anchor's — which is exactly what a reader has to check it against),
+      // and the current one is keyed by the address that wrote it, which the rule engine enforces.
+      const legacy = slot && typeof slot.old_patch_id === 'string';
+      const entries: [string, any][] = legacy ? [['', slot]] : Object.entries<any>(slot ?? {});
+      for (const [writer, s] of entries) {
+        if (!s || typeof s !== 'object') continue;
+        const related = Math.max(attestTs.get(nw) ?? 0, anchorTs.get(nw) ?? 0);
+        const ts = typeof s.created_at === 'number' && s.created_at > 0 ? s.created_at : related ? related + 1 : 0;
+        push('supersede', legacy ? `${MARKET}/supersedes/${o}/${nw}` : `${MARKET}/supersedes/${o}/${nw}/${writer}`,
+          s, legacy ? anchorAuthor.get(nw) ?? '' : writer, ts);
+      }
     }
   for (const [id, per] of Object.entries<any>(market?.prices ?? {}))
     for (const [author, slots] of Object.entries<any>(per ?? {}))
@@ -402,7 +411,15 @@ export class AinLedger implements Ledger {
   }
 
   private async setMarketRules(): Promise<void> {
-    const rules: [string, string][] = [
+    const rules = AinLedger.marketRules();
+    const op_list = rules.map(([ref, write]) => ({ type: 'SET_RULE', ref, value: { '.rule': { write } } }));
+    const res = await this.ain.sendTransaction({ operation: { type: 'SET', op_list }, ...this.tx() });
+    AinLedger.assertOk(res, 'market rules');
+  }
+
+  /** The write rules this build sets, and the ones `verify()` holds the chain to. One table, so they cannot drift. */
+  static marketRules(): [string, string][] {
+    return [
       [`${MARKET}/patches/$patch_id`, "auth.addr === newData.author && (data === null || data.author === auth.addr)"],
       [`${MARKET}/attestations/$patch_id/$verifier`, 'auth.addr === $verifier'],
       // item 331 — one slot per measurement, and a written slot is immutable. Without `data === null` a verifier
@@ -412,7 +429,12 @@ export class AinLedger implements Ledger {
       [`${MARKET}/challenges/$patch_id/$challenger`, 'auth.addr === $challenger'],
       [`${MARKET}/branches/$branch`, "auth.addr === newData.owner && (data === null || data.owner === auth.addr)"],
       [`${MARKET}/nodes/$addr`, 'auth.addr === $addr'],
+      // A supersede said `auth.addr !== ''` — any address at all could mark ANYBODY's anchor superseded, and the
+      // record then sat on the permanent public record where every node applied it. The writer goes in the path,
+      // the way `retires` and `disputes` already do it, so the rule engine can name them; readers then check that
+      // writer against the two anchors' author, which is the rule a supersede actually has (items 151, 363).
       [`${MARKET}/supersedes/$old_id/$new_id`, "auth.addr !== ''"],
+      [`${MARKET}/supersedes/$old_id/$new_id/$author`, 'auth.addr === $author && data === null'],
       [`${MARKET}/subscriptions/$node/$branch`, 'auth.addr === $node'],
       [`${MARKET}/retires/$patch_id/$author`, 'auth.addr === $author'],
       // item 347 — a contested sale and the seller's answer to it, one write-once slot per party.
@@ -420,11 +442,11 @@ export class AinLedger implements Ledger {
       // item 278 — only the anchor's own author re-prices it, and every price ever set stays on the record.
       [`${MARKET}/prices/$patch_id/$author/$created_at`, 'auth.addr === $author && data === null'],
       // item 314 — the seller's own record of the royalty transfer that honoured a settlement, keyed by settle hash.
-      [`${MARKET}/payouts/$settle_hash/$to`, 'auth.addr === newData.seller || data === null'],
+      // `|| data === null` let ANY address create the first payout record for any settlement — a fabricated proof
+      // that a seller had paid royalties it never paid — and the first clause with no `data === null` let the
+      // seller rewrite one afterwards. Every sibling write-once rule here uses `&&`; this one meant to.
+      [`${MARKET}/payouts/$settle_hash/$to`, 'auth.addr === newData.seller && data === null'],
     ];
-    const op_list = rules.map(([ref, write]) => ({ type: 'SET_RULE', ref, value: { '.rule': { write } } }));
-    const res = await this.ain.sendTransaction({ operation: { type: 'SET', op_list }, ...this.tx() });
-    AinLedger.assertOk(res, 'market rules');
   }
 
   // ---------------------------------------------------------------- Ledger API
@@ -504,7 +526,7 @@ export class AinLedger implements Ledger {
       }
       case 'supersede': {
         const s = body as unknown as SupersedeRecord;
-        ref = `${MARKET}/supersedes/${s.old_patch_id}/${s.new_patch_id}`;
+        ref = `${MARKET}/supersedes/${s.old_patch_id}/${s.new_patch_id}/${this.identity.address}`;
         txHash = await this.set(ref, s);
         break;
       }
@@ -584,12 +606,32 @@ export class AinLedger implements Ledger {
   supersedes() { return this.byKind<SupersedeRecord>('supersede'); }
   subscriptions() { return this.byKind<SubscriptionRecord>('subscribe'); }
 
+  /**
+   * What this node can actually check about the chain it trusts.
+   *
+   * Consensus guarantees that the records are the ones that were written. It guarantees nothing about WHO was
+   * allowed to write them: that is the rule engine, and the rules can only be set by the app admin — the address
+   * that happened to run `chain setup` first. This used to read one rule and only ask whether it existed, so an
+   * admin who relaxed `attestations` to let anyone sign anyone's verdict, or `patches` to let anyone overwrite
+   * anyone's anchor, changed the meaning of every record on the chain and no node said a word.
+   *
+   * So the rules are compared with the ones this build expects, and a difference is an error naming both. It is
+   * not a defence — an admin can still change them — but it is the difference between a silent change and a
+   * visible one, which is the most a participant can have while one address owns the rule engine.
+   */
   async verify() {
-    // Integrity is guaranteed by consensus; we report reachability + rule presence.
     const errors: string[] = [];
     try {
-      const rule = await this.ain.db.ref(`${MARKET}/attestations`).getRule();
-      if (!rule) errors.push('market rules not set (run `ainize chain setup`)');
+      const expected = AinLedger.marketRules();
+      let seen = 0;
+      for (const [ref, want] of expected) {
+        const got = await this.ain.db.ref(ref).getRule() as { '.rule'?: { write?: unknown } } | null;
+        const write = got?.['.rule']?.write;
+        if (write === undefined || write === null) { errors.push(`no write rule on ${ref} (run \`ainize chain setup\`)`); continue; }
+        seen++;
+        if (String(write) !== want) errors.push(`the write rule on ${ref} is not the one this build expects — on chain: ${String(write).slice(0, 160)} / expected: ${want.slice(0, 160)}`);
+      }
+      if (!seen) errors.push('market rules not set (run `ainize chain setup`)');
     } catch (e) { errors.push(`chain unreachable: ${(e as Error).message}`); }
     return { valid: errors.length === 0, checked: this.cache.length, errors };
   }
