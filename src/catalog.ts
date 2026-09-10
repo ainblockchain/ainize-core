@@ -81,6 +81,14 @@ export interface CatalogEntry {
 }
 
 const sameAddr = (a: string, b: string) => (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
+/**
+ * How far a record's self-reported `created_at` may run ahead of the `ts` its signature covers.
+ *
+ * Clocks differ, and a record written a few minutes "in the future" is a normal clock, not an attack. A date
+ * further ahead than this is refused rather than trusted, because several rules here read `created_at` as an
+ * ordering key and a date far enough ahead makes them unsatisfiable for ever.
+ */
+const CLOCK_SKEW_MS = 5 * 60_000;
 
 /**
  * Which of one verifier's attestations counts for an entry.
@@ -151,6 +159,9 @@ export function deriveCatalog(
   for (const rec of attestations) {
     const e = byId.get(rec.body.patch_id);
     if (!e) continue;
+    // The chain rule for an attestation is `auth.addr === $verifier`; the gossip path had no equivalent, so a
+    // record claiming to be somebody else's verdict was taken at its word off-chain. `rec.author` is signed.
+    if (!sameAddr(rec.author, rec.body.verifier)) continue;
     const per = byVerifier.get(rec.body.patch_id) ?? new Map<string, Attestation[]>();
     const list = per.get(rec.body.verifier) ?? [];
     list.push(rec.body);
@@ -160,17 +171,51 @@ export function deriveCatalog(
   for (const rec of settlements) {
     const e = byId.get(rec.body.patch_id);
     if (!e) continue;
+    /**
+     * A sale is written by one of the two parties to it — the chain rule is "buyer or seller" and this is that rule
+     * off-chain. Without it a third node could invent sales of anybody's knowledge, and `downloads`, `buyers` and
+     * `revenue` — the numbers a stranger reads to decide what is worth buying — were whatever the loudest peer said.
+     *
+     * What this does NOT close: a seller who also controls the buyer address. `self_purchases` already drops the
+     * case where they are literally the same address, but a second address costs nothing, so the sales figures
+     * remain self-assertable by a determined seller. Closing that needs the transfer behind `tx_hash` checked
+     * against the chain, which this function cannot do — it is pure by design, and every node derives its catalogue
+     * from it on every read. The check belongs on ingest, where the ledger is in hand; until it exists, treat these
+     * counters as "what the parties claim", which is what the field docs now say.
+     */
+    if (!sameAddr(rec.author, rec.body.buyer) && !sameAddr(rec.author, rec.body.seller)) continue;
     e.settlements.push(rec.body);
   }
   for (const rec of challenges) {
     const e = byId.get(rec.body.patch_id);
-    if (e) e.challenges.push(rec.body);
+    if (!e) continue;
+    // A challenge is signed by its challenger, or it is not a challenge. `body.challenger` used to be believed on
+    // its own, so one hostile peer could file unlimited challenges under invented addresses — `Market.challenge`'s
+    // "one open challenge per address" and its cooldown are both keyed on this field — and hold any listing off
+    // sale for ever. `rec.author` is what the signature covers.
+    if (!sameAddr(rec.author, rec.body.challenger)) continue;
+    // A challenge dated in the future is unanswerable by construction: `current` below keeps only attestations
+    // written AFTER the open challenge, so a date years ahead means no attestation can ever answer it while every
+    // verifier re-runs the benchmark for it on every round. Records may not be dated after they were written.
+    if (rec.body.created_at > rec.ts + CLOCK_SKEW_MS) continue;
+    e.challenges.push(rec.body);
   }
   for (const rec of supersedes) {
     const oldE = byId.get(rec.body.old_patch_id);
     const newE = byId.get(rec.body.new_patch_id);
+    // A supersede is a publisher retiring their OWN earlier version (items 151, 363). `supersedable()` enforces
+    // that where this node WRITES one; nothing enforced it where every node READS one, so a stranger could sign a
+    // supersede naming a competitor's LISTED anchor and every peer's catalogue marked it "newer version
+    // available", dropped it down the ranking and told its buyers. The author of the record must be the author of
+    // BOTH anchors — retiring an anchor you do not own is not yours to do, and crediting an anchor you do not own
+    // as the replacement is not either.
+    if (oldE && !sameAddr(rec.author, oldE.anchor.author)) continue;
+    if (newE && !sameAddr(rec.author, newE.anchor.author)) continue;
+    // A supersede naming a `new_patch_id` this node has never seen cannot be shown to anyone as "the newer
+    // version", and it is the shape a fabricated one takes: the old id is real, the new one is not.
+    if (!newE) continue;
     if (oldE) oldE.superseded_by.push(rec.body.new_patch_id);
-    if (newE) newE.supersedes.push(rec.body.old_patch_id);
+    newE.supersedes.push(rec.body.old_patch_id);
   }
   for (const e of byId.values()) {
     for (const p of e.anchor.parents) byId.get(p)?.children.push(e.anchor.id);
@@ -224,7 +269,23 @@ export function deriveCatalog(
     e.executors_unknown = executed.filter((a) => !a.executor?.instance).length;
     e.integrity_checks = counted.filter((a) => a.verified_on === 'hash-only').length;
     e.self_checks = e.attestations.length - independent.length;
-    e.quorum_ok = e.passed >= quorum;
+    /**
+     * The quorum is a count of MACHINES, not of addresses.
+     *
+     * `e.passed` counts attestations, which are deduplicated per verifier address — so three node processes sharing
+     * one vLLM, which is how a single host runs a cluster, produced three "independent" verifications of the same
+     * bytes on the same weights and opened the sale. The fingerprint that says otherwise was already computed on
+     * the line above, and was shown to people (`sharedEngine` on the knowledge page, a warning line in the CLI)
+     * while the gate that decides `sellable` went on counting addresses. A warning nobody is obliged to read is
+     * not the promise this product makes about verification.
+     *
+     * Attestations written before `executor` existed carry no fingerprint and cannot be grouped by machine; they
+     * are counted per address, as they always were, so no published knowledge loses a verification it already had.
+     * The two are added, never mixed: a fingerprinted attestation is counted by its machine and by nothing else.
+     * `executor.instance` is inside the signed body (verifier.ts), so claiming a machine you are not on is forgery
+     * rather than an accident of deployment — which is the line this check is meant to draw.
+     */
+    e.quorum_ok = e.executors.length + e.executors_unknown >= quorum;
     // Items 365 / 194 — a sale to yourself is not a sale, and a sale is not what the seller was paid.
     const fmtAmt = (n: number) => n.toFixed(6).replace(/\.?0+$/, '') || '0';
     const real = e.settlements.filter((x) => !sameAddr(x.buyer, x.seller));

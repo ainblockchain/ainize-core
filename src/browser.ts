@@ -10,6 +10,9 @@
  * Adding a runtime value here is how the guarantee gets lost. Types are free; values are not.
  */
 export * from './types.js';
+// Pure, and it imports nothing but types.js — so the web can show a verification count the same way the CLI does
+// instead of reimplementing `Math.min(passed, quorum)` in four places and dropping the `extra` it returns.
+export { verificationCount } from './catalog.js';
 export type {
   Ledger, LedgerEvents, LedgerInfo, PayoutRecord, PriceRecord, RecordBody,
   RetireRecord, SubscriptionRecord, SupersedeRecord,
