@@ -116,9 +116,9 @@ export function effectiveAttestation(list: Attestation[], challengedAt = 0): Att
  * How a verification count is written for a human: the numerator never exceeds the quorum (`3/2` is arithmetic no
  * reader can interpret), and any attestations beyond it are reported as a separate, honest count.
  */
-export function verificationCount(e: { passed: number; quorum: number }): { fraction: string; extra: number } {
+export function verificationCount(e: { passed: number; quorum: number }): { shown: number; fraction: string; extra: number } {
   const shown = Math.min(e.passed, e.quorum);
-  return { fraction: `${shown}/${e.quorum}`, extra: e.passed - shown };
+  return { shown, fraction: `${shown}/${e.quorum}`, extra: e.passed - shown };
 }
 
 export function deriveCatalog(
