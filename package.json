@@ -1,7 +1,19 @@
 {
   "name": "@ainize/core",
   "version": "0.1.0",
-  "private": true,
+  "description": "Ainize core — knowledge-patch schemas, lineage, verification and ledger (AIN) bindings shared by @ainize/node and @ainize/cli",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ainblockchain/ainize-core.git"
+  },
+  "homepage": "https://github.com/ainblockchain/ainize",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=24"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
