@@ -3,7 +3,7 @@
  * Status machine (도 16): DRAFT → ANNOUNCED → VERIFYING → LISTED | REJECTED; LISTED → CHALLENGED → VERIFYING;
  * LISTED → SUPERSEDED when a newer patch on the same benchmark schema overlaps its address set.
  */
-import { effectiveRoyaltyShare, effectiveVerifierShare, MAX_CONTRIBUTORS } from './types.js';
+import { effectiveRoyaltyShare, effectiveVerifierShare, MAX_CONTRIBUTORS, sameAddr } from './types.js';
 import type { Attestation, Challenge, Contributor, LedgerRecord, PatchAnchor, PatchStatus, Settlement } from './types.js';
 import type { SupersedeRecord } from './ledger.js';
 
@@ -80,7 +80,6 @@ export interface CatalogEntry {
   listed_at?: number;
 }
 
-const sameAddr = (a: string, b: string) => (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
 /**
  * How far a record's self-reported `created_at` may run ahead of the `ts` its signature covers.
  *

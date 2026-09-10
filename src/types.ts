@@ -1052,3 +1052,15 @@ export interface TeachTrainingSpec {
   /** Positions in the dataset this lesson trained, in order: `job.facts[i]` is `dataset.rows[selected_indexes[i]]`. */
   selected_indexes?: number[];
 }
+
+/**
+ * Are these the same address?
+ *
+ * An AIN/Ethereum address is checksummed — the same address is written `0xAbC…` in one record and `0xabc…` in
+ * another, and `===` between the two forms is false. Comparisons of this kind were spread across the node, the
+ * catalogue and the verifier as three private copies plus a scattering of raw `===`, which is how a verifier
+ * ended up unable to recognise its own earlier attestation. One definition, and it lives here because `types.ts`
+ * imports nothing and so is reachable from a browser bundle too.
+ */
+export const sameAddr = (a: string | undefined | null, b: string | undefined | null): boolean =>
+  (a ?? '').toLowerCase() === (b ?? '').toLowerCase();
