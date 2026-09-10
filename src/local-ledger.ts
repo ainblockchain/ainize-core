@@ -29,6 +29,24 @@ export function recordHash(kind: RecordKind, body: unknown, author: string, ts: 
   return sha256Hex(canonicalJson({ kind, body, author, ts, parents }));
 }
 
+/**
+ * A record this ledger will never accept, however often it is offered — a hash that does not match its body, a
+ * signature that is not its author's.
+ *
+ * The distinction matters to whoever is feeding records in: a refusal is final, so a sync may pass over it, while
+ * anything else (a busy database, a write that threw part-way) is this node's problem and the record must be
+ * offered again rather than skipped for ever.
+ */
+export class RecordRefused extends Error {
+  readonly refused = true as const;
+  constructor(message: string) { super(message); this.name = 'RecordRefused'; }
+}
+
+/** Is this the ledger saying "never", rather than "not now"? */
+export function isRecordRefusal(e: unknown): boolean {
+  return !!e && typeof e === 'object' && (e as { refused?: unknown }).refused === true;
+}
+
 export class LocalLedger implements Ledger {
   readonly kind = 'local' as const;
   private db!: DatabaseSync;
@@ -89,7 +107,7 @@ export class LocalLedger implements Ledger {
 
   async ingest(record: LedgerRecord): Promise<boolean> {
     if (this.has(record.hash)) return false;
-    if (!LocalLedger.validate(record)) throw new Error(`invalid record ${record.hash}`);
+    if (!LocalLedger.validate(record)) throw new RecordRefused(`invalid record ${record.hash}`);
     this.insert(record, record.author.startsWith('prototype:'));
     this.events.onRecord?.(record);
     return true;
