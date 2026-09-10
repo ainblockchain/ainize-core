@@ -141,8 +141,8 @@ test('item 146: an author attesting its own anchor is a self-check — never cou
 test('item 146: the displayed fraction never exceeds the quorum, and the extra attestations are reported separately', () => {
   const three = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11), attRec('p', 'v3', 12)], [], [], [], 2)[0];
   assert.equal(three.passed, 3);
-  assert.deepEqual(verificationCount(three), { fraction: '2/2', extra: 1 });
-  assert.deepEqual(verificationCount({ passed: 1, quorum: 2 }), { fraction: '1/2', extra: 0 });
+  assert.deepEqual(verificationCount(three), { shown: 2, fraction: '2/2', extra: 1 });
+  assert.deepEqual(verificationCount({ passed: 1, quorum: 2 }), { shown: 1, fraction: '1/2', extra: 0 });
 });
 
 test('item 153: a challenge holds the sale (sellable false) and names itself; re-verification lifts it', () => {
