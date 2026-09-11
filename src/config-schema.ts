@@ -120,7 +120,7 @@ export const nodeConfigSchema = z.object({
      * Sell knowledge that has NOT met the quorum, at the buyer's risk (ANNOUNCED / VERIFYING).
      *
      * Off by default, and it does not touch the status: an unverified anchor stays ANNOUNCED and is never
-     * relabelled LISTED. Verification is the one quality signal this marketplace has, and a status that says
+     * relabelled VERIFIED. Verification is the one quality signal this marketplace has, and a status that says
      * "verified" when nobody checked would be worth less than no status at all. What this permits is a buyer
      * deciding, with the attestation count in front of them, to take the risk anyway — which is a different
      * thing from the network pretending the risk is not there.

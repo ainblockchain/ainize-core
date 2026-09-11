@@ -5,7 +5,7 @@
  *  - Patch (지식 패치): rows (addr, before, after) of an n-gram conditional-memory table + model identity.
  *  - Benchmark (벤치마크): queries/answers + collateral bound used to machine-verify a patch.
  *  - Anchor / Attest / Settle: ledger record kinds (등록·증명·정산 블록).
- *  - Publish state machine: DRAFT → ANNOUNCED → VERIFYING → LISTED | REJECTED, LISTED → CHALLENGED → VERIFYING,
+ *  - Publish state machine: DRAFT → ANNOUNCED → VERIFYING → VERIFIED | REJECTED, VERIFIED → CHALLENGED → VERIFYING,
  *    and any announced state → RETIRED when the author writes a `retire` record (the record stays; the sale stops).
  */
 
@@ -13,7 +13,7 @@ export type PatchStatus =
   | 'DRAFT'
   | 'ANNOUNCED'
   | 'VERIFYING'
-  | 'LISTED'
+  | 'VERIFIED'
   | 'REJECTED'
   | 'CHALLENGED'
   | 'SUPERSEDED'
@@ -21,8 +21,31 @@ export type PatchStatus =
   | 'RETIRED';
 
 export const PATCH_STATUSES: PatchStatus[] = [
-  'DRAFT', 'ANNOUNCED', 'VERIFYING', 'LISTED', 'REJECTED', 'CHALLENGED', 'SUPERSEDED', 'RETIRED',
+  'DRAFT', 'ANNOUNCED', 'VERIFYING', 'VERIFIED', 'REJECTED', 'CHALLENGED', 'SUPERSEDED', 'RETIRED',
 ];
+
+/**
+ * Names this state has been called by, accepted on INPUT only.
+ *
+ * `VERIFIED` used to be `LISTED`, and that name was the problem: "on a list" is already true of `ANNOUNCED`, so
+ * the two states that a buyer most needs to tell apart were named as if they were the same thing. What the state
+ * actually means is that independent verifiers reproduced the benchmark — which is the only quality signal this
+ * marketplace has, and the whole decision a buyer makes under `verifier.sellUnverified`.
+ *
+ * The rename costs nothing on disk: the ledger records anchors and attestations, never a status string, so status
+ * is derived at read time and there is nothing to migrate or re-sign. What it does break is the `LISTED` already
+ * baked into a published CLI, its README and the runbooks, so filters keep accepting the old spelling. Only the
+ * spelling: everything that REPORTS a status reports `VERIFIED`, so the old name never propagates onward.
+ */
+const STATUS_ALIASES: Record<string, PatchStatus> = { LISTED: 'VERIFIED' };
+
+/** Canonical form of a status the caller typed, or null if it names no state. Case-insensitive; aliases applied. */
+export function parseStatus(input: string): PatchStatus | null {
+  const up = input.trim().toUpperCase();
+  const aliased = STATUS_ALIASES[up];
+  if (aliased) return aliased;
+  return (PATCH_STATUSES as string[]).includes(up) ? (up as PatchStatus) : null;
+}
 
 /** Billing model for a patch (청구항 12). */
 export type BillingModel = 'per_download' | 'per_apply_hour' | 'per_hit';
@@ -572,7 +595,7 @@ export interface X402Requirement {
    * nothing else, so a script assembling a set from ids seen last week used to buy and stack retired versions with
    * no way to know, and no agent could decide on lineage, licence or who is paid BEFORE paying.
    *
-   * `status` is the seller's own catalogue status (`LISTED` | `SUPERSEDED`); `superseded_by` names the newer
+   * `status` is the seller's own catalogue status (`VERIFIED` | `SUPERSEDED`); `superseded_by` names the newer
    * versions; `license` is the anchor's SPDX id; `lineage.standalone` is true when nothing is declared underneath;
    * `split_preview` is the same `royaltyPlan` that will settle the sale, so the buyer sees the split before paying
    * and can compare it with the one on the receipt afterwards.
@@ -710,7 +733,7 @@ export interface NodeConfig {
      * Sell knowledge that has NOT met the quorum, at the buyer's risk. Off by default.
      *
      * It does NOT change the status: an unverified anchor stays ANNOUNCED or VERIFYING and is never
-     * relabelled LISTED. Verification is the one quality signal this marketplace has, and a status claiming
+     * relabelled VERIFIED. Verification is the one quality signal this marketplace has, and a status claiming
      * "verified" when nobody checked would be worth less than no status at all. What this permits is a buyer
      * choosing, with the attestation count in front of them, to take the risk — which is a different thing
      * from the network hiding that there is one.
