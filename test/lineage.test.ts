@@ -256,7 +256,7 @@ const entryOf = (id: string, parents: string[], author: string, contributors?: C
     benchmark: { schema: `taught/${id}`, queries: 1, format: [] }, benchmark_hash: 'h', price: '10', currency: 'CREDIT',
     parents, parent_authors: [], topic_path: 't', created_at: 1, origin: 'teach', ...(contributors ? { contributors } : {}),
   } as PatchAnchor,
-  status: 'LISTED', attestations: [], passed: 2, integrity_checks: 0, self_checks: 0, quorum: 2, quorum_ok: true, sellable: true,
+  status: 'VERIFIED', attestations: [], passed: 2, integrity_checks: 0, self_checks: 0, quorum: 2, quorum_ok: true, sellable: true,
   settlements: [], downloads: 0, revenue: '0', challenges: [], challenge_log: [], verifiers: [], executors: [], executors_unknown: 0,
   no_baseline: 0, superseded_by: [], supersedes: [], children: [], record_hash: '',
 } as unknown as CatalogEntry);

@@ -9,6 +9,7 @@ import { deriveCatalog, royaltyPlan, royaltySplit, sanitizeContributors, validat
 import { toAin, fromAin, withEmptyArrays, recordsFromMarketState } from '../src/ain-ledger.js';
 import { DEFAULT_TEACH_CONFIG, defaultConfig, loadConfig, saveConfig, teachConfig } from '../src/config.js';
 import { addressSet, intersectionCount, addressSketch, sketchJaccard } from '../src/npz.js';
+import { PATCH_STATUSES, parseStatus } from '../src/types.js';
 import type { PatchAnchor, Attestation, Challenge, Contributor, LedgerRecord } from '../src/types.js';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -78,7 +79,7 @@ test('catalog status machine and royalty split', () => {
     [], [], [], 2,
   );
   const m = new Map(cat.map((e) => [e.anchor.id, e]));
-  assert.equal(m.get('a')!.status, 'LISTED');
+  assert.equal(m.get('a')!.status, 'VERIFIED');
   assert.equal(m.get('b')!.status, 'VERIFYING');
   assert.equal(m.get('c')!.status, 'REJECTED');
   assert.deepEqual(m.get('a')!.children, ['b']);
@@ -130,12 +131,12 @@ test('item 146: an author attesting its own anchor is a self-check — never cou
   const mixed = deriveCatalog([anchorRec('p', '0xabc')], [attRec('p', '0xABC', 10), attRec('p', 'v1', 11), attRec('p', 'v2', 12)], [], [], [], 2)[0];
   assert.equal(mixed.self_checks, 1);
   assert.equal(mixed.passed, 2);
-  assert.equal(mixed.status, 'LISTED');
+  assert.equal(mixed.status, 'VERIFIED');
   // a node that deliberately turns the guard off (single-node dev config) counts them, and reports 0 excluded
   const dev = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'A', 10), attRec('p', 'v1', 11)], [], [], [], 2, [], true)[0];
   assert.equal(dev.passed, 2);
   assert.equal(dev.self_checks, 0);
-  assert.equal(dev.status, 'LISTED');
+  assert.equal(dev.status, 'VERIFIED');
 });
 
 test('item 146: the displayed fraction never exceeds the quorum, and the extra attestations are reported separately', () => {
@@ -149,7 +150,7 @@ test('item 153: a challenge holds the sale (sellable false) and names itself; re
   const anchors = [anchorRec('p', 'A')];
   const atts = [attRec('p', 'v1', 10), attRec('p', 'v2', 11)];
   const listed = deriveCatalog(anchors, atts, [], [], [], 2)[0];
-  assert.equal(listed.status, 'LISTED');
+  assert.equal(listed.status, 'VERIFIED');
   assert.equal(listed.sellable, true);
 
   const challenged = deriveCatalog(anchors, atts, [], [chRec('p', 'v3', 20)], [], 2)[0];
@@ -165,7 +166,7 @@ test('item 153: a challenge holds the sale (sellable false) and names itself; re
 
   // a verifier that had already attested re-runs it: the newer attestation replaces the older one and re-lists the patch
   const cleared = deriveCatalog(anchors, [...atts, attRec('p', 'v1', 30), attRec('p', 'v2', 31)], [], [chRec('p', 'v3', 20)], [], 2)[0];
-  assert.equal(cleared.status, 'LISTED');
+  assert.equal(cleared.status, 'VERIFIED');
   assert.equal(cleared.sellable, true);
   assert.equal(cleared.passed, 2);
   assert.equal(cleared.attestations.length, 2);       // still one attestation per verifier
@@ -184,7 +185,7 @@ test('item 153: outside a challenge the first attestation of a verifier still st
   const e = deriveCatalog(anchors, [attRec('p', 'v1', 10), attRec('p', 'v1', 40, { passed: false })], [], [], [], 1)[0];
   assert.equal(e.attestations.length, 1);
   assert.equal(e.attestations[0].created_at, 10);
-  assert.equal(e.status, 'LISTED');
+  assert.equal(e.status, 'VERIFIED');
   // hash-only → executed by the same verifier is still an upgrade
   const up = deriveCatalog(anchors, [attRec('p', 'v1', 10, { on: 'hash-only' }), attRec('p', 'v1', 20)], [], [], [], 1)[0];
   assert.equal(up.attestations[0].verified_on, 'vllm:M');
@@ -213,7 +214,7 @@ const mkEntry = (id: string, parents: string[], author: string, contributors?: C
   anchor: { id, name: id, description: '', author, model: { id_M: 'M' }, patch_sha256: id, size_bytes: 1, rows: 1,
     benchmark: { schema: 's', queries: 1, format: [] }, benchmark_hash: 'h', price: '10', currency: 'CREDIT' as const, billing: 'per_download' as const,
     parents, parent_authors: [], topic_path: 't', created_at: 1, contributors } as PatchAnchor,
-  status: 'LISTED' as const, attestations: [], passed: 2, integrity_checks: 0, self_checks: 0, quorum: 2, quorum_ok: true, sellable: true, settlements: [], downloads: 0, revenue: '0',
+  status: 'VERIFIED' as const, attestations: [], passed: 2, integrity_checks: 0, self_checks: 0, quorum: 2, quorum_ok: true, sellable: true, settlements: [], downloads: 0, revenue: '0',
   challenges: [], challenge_log: [], verifiers: [] as string[], executors: [], executors_unknown: 0, no_baseline: 0, superseded_by: [], supersedes: [], children: [], record_hash: '',
 });
 const teacher = (address: string, share: number): Contributor => ({ address, share, role: 'data_provider', proof: 'signed', sig: 'x' });
@@ -498,7 +499,7 @@ test('item 242: a challenge on a VERIFYING entry is open (so verifiers re-run it
   const answered = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11, { passed: false }), attRec('p', 'v2', 30), attRec('p', 'v1', 31)], [], [chRec('p', 'A', 20, 'the second verifier ran on the wrong model')], [], 2)[0];
   assert.equal(answered.open_challenge, undefined);
   assert.equal(answered.challenge_log[0].state, 'dismissed');
-  assert.equal(answered.status, 'LISTED');
+  assert.equal(answered.status, 'VERIFIED');
   const upheld = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 30, { passed: false })], [], [chRec('p', 'A', 20, 'answers are wrong on 3 of the 8 questions')], [], 2)[0];
   assert.equal(upheld.challenge_log[0].state, 'upheld');
 });
@@ -514,7 +515,7 @@ test('item 339: a failing recheck withdraws the same verifier\u2019s earlier PAS
   // a PASSING recheck is a confirmation, not a withdrawal: the first record still counts
   const confirmed = deriveCatalog([anchorRec('p', 'A')], [attRec('p', 'v1', 10), attRec('p', 'v2', 11), recheck('p', 'v2', 30, true)], [], [], [], 2)[0];
   assert.equal(confirmed.passed, 2);
-  assert.equal(confirmed.status, 'LISTED');
+  assert.equal(confirmed.status, 'VERIFIED');
 });
 
 test('item 329: two verifiers on one model server are one executor, and a run with no baseline is not counted', () => {
@@ -539,4 +540,16 @@ test('item 329: two verifiers on one model server are one executor, and a run wi
   assert.equal(stacked.no_baseline, 1);
   assert.equal(stacked.attestations.length, 2);
   assert.equal(stacked.status, 'VERIFYING');
+});
+
+test('parseStatus accepts the old LISTED spelling and reports the new one', () => {
+  // The published CLI, its README and the runbooks all say LISTED. The rename must not turn
+  // `ainize patch ls --status LISTED` into "unknown status" for everyone who has it installed.
+  assert.equal(parseStatus('LISTED'), 'VERIFIED');
+  assert.equal(parseStatus('listed'), 'VERIFIED');
+  assert.equal(parseStatus('VERIFIED'), 'VERIFIED');
+  assert.equal(parseStatus(' announced '), 'ANNOUNCED');
+  // An alias is accepted on input only; nothing reports it back.
+  assert.ok(!PATCH_STATUSES.includes('LISTED' as never));
+  assert.equal(parseStatus('ON_SALE'), null);
 });

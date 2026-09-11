@@ -1,7 +1,7 @@
 /**
  * Catalog derivation — turns ledger records into the marketplace view.
- * Status machine (도 16): DRAFT → ANNOUNCED → VERIFYING → LISTED | REJECTED; LISTED → CHALLENGED → VERIFYING;
- * LISTED → SUPERSEDED when a newer patch on the same benchmark schema overlaps its address set.
+ * Status machine (도 16): DRAFT → ANNOUNCED → VERIFYING → VERIFIED | REJECTED; VERIFIED → CHALLENGED → VERIFYING;
+ * VERIFIED → SUPERSEDED when a newer patch on the same benchmark schema overlaps its address set.
  */
 import { effectiveRoyaltyShare, effectiveVerifierShare, MAX_CONTRIBUTORS, sameAddr } from './types.js';
 import type { Attestation, Challenge, Contributor, LedgerRecord, PatchAnchor, PatchStatus, Settlement } from './types.js';
@@ -13,7 +13,7 @@ export interface CatalogEntry {
   attestations: Attestation[];
   /** Attestations that actually executed the benchmark on a compatible runtime (count toward quorum). */
   passed: number;
-  /** Integrity-only (hash-only) attestations — shown, but never sufficient for LISTED when the patch declares benchmark samples. */
+  /** Integrity-only (hash-only) attestations — shown, but never sufficient for VERIFIED when the patch declares benchmark samples. */
   integrity_checks: number;
   /**
    * Attestations written by the anchor's own author that were EXCLUDED from the counts above (the shipped
@@ -27,7 +27,7 @@ export interface CatalogEntry {
   sellable: boolean;
   /**
    * The challenge nobody has answered yet: the newest challenge written after the newest attestation that counts.
-   * Set on ANNOUNCED / VERIFYING / REJECTED entries too, not only on LISTED ones (item 242) — a challenge is a
+   * Set on ANNOUNCED / VERIFYING / REJECTED entries too, not only on VERIFIED ones (item 242) — a challenge is a
    * question addressed to the verifiers, and an item stuck at 1/2 with one FAIL is exactly the case where the
    * publisher needs one re-run and the product told them to file a challenge to get it.
    */
@@ -92,7 +92,7 @@ const CLOCK_SKEW_MS = 5 * 60_000;
 /**
  * Which of one verifier's attestations counts for an entry.
  *  - after a challenge: the newest attestation written after it (re-verification answers the challenge and replaces
- *    the pre-challenge result — otherwise a challenged patch could never return to LISTED, since every verifier has
+ *    the pre-challenge result — otherwise a challenged patch could never return to VERIFIED, since every verifier has
  *    already attested it);
  *  - otherwise: the first one, upgraded to the first attestation that actually executed the benchmark
  *    (a real run beats an earlier hash-only check by the same node).
@@ -204,7 +204,7 @@ export function deriveCatalog(
     const newE = byId.get(rec.body.new_patch_id);
     // A supersede is a publisher retiring their OWN earlier version (items 151, 363). `supersedable()` enforces
     // that where this node WRITES one; nothing enforced it where every node READS one, so a stranger could sign a
-    // supersede naming a competitor's LISTED anchor and every peer's catalogue marked it "newer version
+    // supersede naming a competitor's VERIFIED anchor and every peer's catalogue marked it "newer version
     // available", dropped it down the ranking and told its buyers. The author of the record must be the author of
     // BOTH anchors — retiring an anchor you do not own is not yours to do, and crediting an anchor you do not own
     // as the replacement is not either.
@@ -224,14 +224,14 @@ export function deriveCatalog(
     // A patch that ships benchmark samples must be *executed* by verifiers; hash-only checks are recorded but do not list it.
     const needsBenchmark = (e.anchor.benchmark.samples?.length ?? 0) > 0;
     // An author attesting its own anchor is a self-check, never a verification: it is shown but excluded from every count
-    // that decides LISTED, so an attestation already on the chain stops counting the moment this node reads it.
+    // that decides VERIFIED, so an attestation already on the chain stops counting the moment this node reads it.
     const isSelf = (a: Attestation) => !allowSelfAttest && sameAddr(a.verifier, e.anchor.author);
     const independent = e.attestations.filter((a) => !isSelf(a));
     /*
      * What happened to each challenge: the attestations written after it are the verifiers' answer (item 328) — and
      * ONLY those (item 330). A challenge used to be cleared by a single fresh PASS from anyone, after which the
      * second quorum slot was filled by a pre-challenge record, including the challenger's own: on the demo chain
-     * node-b challenged at 11:54:51, node-c alone re-ran at 11:56:06, and the item was LISTED 2/2 with node-b's
+     * node-b challenged at 11:54:51, node-c alone re-ran at 11:56:06, and the item was VERIFIED 2/2 with node-b's
      * 11:53:42 row still counted while node-b's own re-run had not finished. A challenge is a question addressed to
      * the verifiers, so it is answered when the QUORUM is re-established by measurements taken after it — and one
      * verifier that fails the re-run upholds it whatever anyone else measured.
@@ -308,7 +308,7 @@ export function deriveCatalog(
     // on sale and is now disputed reads CHALLENGED, not "back to VERIFYING" — the sale stopped, the history did not.
     const everPassed = independent.filter((a) => a.baseline !== false && a.passed && (!needsBenchmark || a.verified_on !== 'hash-only'));
     if (e.quorum_ok) {
-      e.status = 'LISTED';
+      e.status = 'VERIFIED';
       e.listed_at = Math.max(...executed.map((a) => a.created_at));
       // An unanswered challenge holds the entry until a QUORUM of verifiers re-runs it (item 330).
       if (e.open_challenge) e.status = 'CHALLENGED';
