@@ -798,6 +798,14 @@ export interface NodeConfig {
   p2p?: {
     /** Learn peers from peer exchange at all (default true). false = talk only to the configured list. */
     acceptExchange?: boolean;
+    /**
+     * Hold blobs other nodes offer (`POST /p2p/blob/:sha`), so a publisher with no reachable address can
+     * still sell. Blob transfer is pull-only, so without a relay a firewalled publisher's anchor gossips
+     * but its body can never be fetched — it stays ANNOUNCED for ever, with no error anywhere.
+     */
+    relayBlobs?: boolean;
+    /** Ceiling on bytes stored for other nodes. 0 or unset disables relaying. */
+    maxRelayBytes?: number;
     /** Ceiling on the peer table (default 50). Past it the least recently seen LEARNED peer is dropped. */
     maxPeers?: number;
     /** Drop a LEARNED peer after this many consecutive failed rounds (default 60; 0 = never). */

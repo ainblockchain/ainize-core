@@ -154,6 +154,24 @@ export const nodeConfigSchema = z.object({
   /** What this node accepts from peer exchange (items 136/137). */
   p2p: z.object({
     acceptExchange: z.boolean().optional(),
+    /**
+     * Hold blobs that other nodes offer, so a node with no reachable address can still be a seller.
+     *
+     * Every blob transfer in this protocol is a PULL: a verifier or a buyer goes to whoever holds the bytes
+     * (`GET /p2p/blob/:sha`). That works perfectly for a consumer behind a firewall — it is the one making
+     * the outbound connection — and not at all for a publisher, because the verifier has to reach IN. The
+     * anchor gossips fine, the catalogue shows it, and it sits at ANNOUNCED for ever because nobody can
+     * fetch the body. No error is raised anywhere, which is what makes it the most confusing way to fail.
+     *
+     * With this on, a publisher offers the bytes to a reachable peer (`POST /p2p/blob/:sha`), that peer
+     * becomes a holder, and `holders()` hands it to every fetcher unchanged. Accepting is safe because the
+     * content is checked against the sha256 the signed anchor already names — a relay cannot be made to
+     * serve something other than what the author published.
+     *
+     * `maxRelayBytes` caps what this node will store on others' behalf; 0 or unset means the feature is off.
+     */
+    relayBlobs: z.boolean().optional(),
+    maxRelayBytes: nonNegative.optional(),
     maxPeers: nonNegative.optional(),
     evictAfterFailures: nonNegative.optional(),
     staleDays: nonNegative.optional(),
