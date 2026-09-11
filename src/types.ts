@@ -706,6 +706,16 @@ export interface NodeConfig {
     stake?: string;
     /** false (the default): the author of an anchor cannot attest it — the write is refused and such records never count toward the quorum. */
     allowSelfAttest: boolean;
+    /**
+     * Sell knowledge that has NOT met the quorum, at the buyer's risk. Off by default.
+     *
+     * It does NOT change the status: an unverified anchor stays ANNOUNCED or VERIFYING and is never
+     * relabelled LISTED. Verification is the one quality signal this marketplace has, and a status claiming
+     * "verified" when nobody checked would be worth less than no status at all. What this permits is a buyer
+     * choosing, with the attestation count in front of them, to take the risk — which is a different thing
+     * from the network hiding that there is one.
+     */
+    sellUnverified?: boolean;
     intervalMs: number;
     /** false = verify only on demand (`ainize patch verify` / POST /api/patches/:id/verify); no background rounds. Default true. */
     auto?: boolean;
