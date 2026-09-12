@@ -10,6 +10,7 @@ import { toAin, fromAin, withEmptyArrays, recordsFromMarketState } from '../src/
 import { DEFAULT_TEACH_CONFIG, defaultConfig, loadConfig, saveConfig, teachConfig } from '../src/config.js';
 import { addressSet, intersectionCount, addressSketch, sketchJaccard } from '../src/npz.js';
 import { PATCH_STATUSES, parseStatus } from '../src/types.js';
+import { delegateHeader, delegateMessage, parseDelegation, verifyDelegation } from '../src/teach-auth.js';
 import type { PatchAnchor, Attestation, Challenge, Contributor, LedgerRecord } from '../src/types.js';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -552,4 +553,34 @@ test('parseStatus accepts the old LISTED spelling and reports the new one', () =
   // An alias is accepted on input only; nothing reports it back.
   assert.ok(!PATCH_STATUSES.includes('LISTED' as never));
   assert.equal(parseStatus('ON_SALE'), null);
+});
+
+test('a delegation names one node, one key and an expiry, and nothing else verifies', () => {
+  const owner = createIdentity();
+  const delegate = createIdentity();
+  const node = createIdentity().address;
+  const now = Date.now();
+  const expires = now + 60 * 60_000;
+  const sign = (o: typeof owner, m: string) => signMessage(m, o.privateKey);
+  const header = delegateHeader({ owner: owner.address, expires, signature: sign(owner, delegateMessage({ node, delegate: delegate.address, expires })) });
+
+  const ok = (ctx: Parameters<typeof verifyDelegation>[1]) => verifyDelegation(header, ctx, verifyMessage);
+  assert.equal(ok({ node, delegate: delegate.address, now }), owner.address);
+
+  // another node cannot be shown the same delegation
+  assert.equal(ok({ node: createIdentity().address, delegate: delegate.address, now }), null);
+  // nor another key: a stolen header is inert without the key it names
+  assert.equal(ok({ node, delegate: createIdentity().address, now }), null);
+  // expiry is enforced, and so is the node's own ceiling on how long one may run
+  assert.equal(ok({ node, delegate: delegate.address, now: expires + 1 }), null);
+  assert.equal(ok({ node, delegate: delegate.address, now, maxMs: 60_000 }), null);
+  // a key delegating to itself proves nothing and is refused rather than quietly accepted
+  const self = delegateHeader({ owner: delegate.address, expires, signature: sign(delegate, delegateMessage({ node, delegate: delegate.address, expires })) });
+  assert.equal(verifyDelegation(self, { node, delegate: delegate.address, now }, verifyMessage), null);
+  // and a signature by anyone but the owner does not make them the owner
+  const forged = delegateHeader({ owner: owner.address, expires, signature: sign(delegate, delegateMessage({ node, delegate: delegate.address, expires })) });
+  assert.equal(verifyDelegation(forged, { node, delegate: delegate.address, now }, verifyMessage), null);
+
+  assert.equal(parseDelegation('nope'), null);
+  assert.equal(parseDelegation(null), null);
 });
