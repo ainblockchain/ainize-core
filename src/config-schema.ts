@@ -39,6 +39,7 @@ const teachSchema = z.object({
   jobsPerKeyPerDay: nonNegative,
   jobsPerIpPerDay: nonNegative,
   queueMax: nonNegative,
+  activeJobsPerKey: z.number().int().min(1).max(1000).optional(),
   contributorShare: share,
   draftTtlDays: positive,
   backend: z.enum(['gradient', 'stub']),

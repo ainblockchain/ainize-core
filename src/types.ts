@@ -843,6 +843,7 @@ export interface TeachConfig {
   jobsPerKeyPerDay: number;
   jobsPerIpPerDay: number;
   queueMax: number;
+  activeJobsPerKey?: number;
   /** Default `Contributor.share` frozen into the anchor at publish (fraction of the seller remainder after lineage). */
   contributorShare: number;
   /** Private READY drafts expire after this many days without save/publish. */

@@ -69,6 +69,7 @@ export const DEFAULT_TEACH_CONFIG: TeachConfig = {
   jobsPerKeyPerDay: 3,
   jobsPerIpPerDay: 5,
   queueMax: 10,
+  activeJobsPerKey: 2,
   contributorShare: 0.7,
   draftTtlDays: 7,
   backend: 'gradient',
