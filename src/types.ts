@@ -701,6 +701,7 @@ export interface NodeConfig {
     address: string;
     publicKey: string;
   };
+  /** @deprecated Sign-in is a signature. Parsed so an old config still loads; read by nothing. */
   operatorPasswordHash?: string;
   /** Addresses that may sign in by signature. The node's own address is always allowed and is not listed. */
   operatorAddresses?: string[];

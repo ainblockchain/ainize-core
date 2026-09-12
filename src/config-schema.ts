@@ -103,6 +103,17 @@ export const nodeConfigSchema = z.object({
     }).optional(),
   }),
   identity: z.object({ privateKey: z.string(), address: z.string(), publicKey: z.string() }),
+  /**
+   * REMOVED. Still parsed so an existing config.json loads, and ignored everywhere.
+   *
+   * The operator was a password from the beginning, and in a product whose entire identity model is "a key signs
+   * for itself" it was the one shared secret left: typed into a browser, stored as a hash by the thing it
+   * protects, and unrotatable without signing everyone out. Sign-in is a signature now — the node's own key
+   * always, and whatever `operatorAddresses` lists.
+   *
+   * Left in the schema on purpose. Dropping it would make every node that has one fail to start, which is a
+   * worse failure than carrying a dead field for a version.
+   */
   operatorPasswordHash: z.string().optional(),
   /**
    * Addresses that may sign in as this node's operator instead of typing the password.
