@@ -51,6 +51,18 @@ const teachSchema = z.object({
     timeoutMs: positive,
     minFreeGpuMb: nonNegative,
     idleStopMin: nonNegative,
+    /**
+     * The two knobs that decide peak GPU memory. Unset, each is derived from the question count — and both
+     * derivations give the LARGEST value to the LARGEST lesson, which is backwards: memory scales with these,
+     * not with the row count, so they raise the pressure exactly on the runs that take hours to reach the point
+     * of failing. A 119-question lesson got micro 64 and 60 contrast pairs and died at the first training step,
+     * twice, an hour into each attempt.
+     *
+     * `maxContrast` is a real trade and not free head room: contrast is the regulariser that protects unrelated
+     * answers, so fewer pairs means less protection. The trainer's notes are written around 24 for 120 facts.
+     */
+    microBatch: z.number().int().min(1).max(512).optional(),
+    maxContrast: z.number().int().min(1).max(512).optional(),
   }),
   locality: z.object({ prompts: z.array(z.string()), minSame: nonNegative }),
   dataset: z.object({
