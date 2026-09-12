@@ -702,6 +702,8 @@ export interface NodeConfig {
     publicKey: string;
   };
   operatorPasswordHash?: string;
+  /** Addresses that may sign in by signature. The node's own address is always allowed and is not listed. */
+  operatorAddresses?: string[];
   runtime?: {
     repo?: string;             // /mnt/newdata/qwen3.8
     api?: string;              // http://localhost:8000

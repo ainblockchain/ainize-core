@@ -1,6 +1,6 @@
 {
   "name": "@ainize/core",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Ainize core \u2014 knowledge-patch schemas, lineage, verification and ledger (AIN) bindings shared by @ainize/node and @ainize/cli",
   "license": "MIT",
   "repository": {

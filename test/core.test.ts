@@ -10,7 +10,7 @@ import { toAin, fromAin, withEmptyArrays, recordsFromMarketState } from '../src/
 import { DEFAULT_TEACH_CONFIG, defaultConfig, loadConfig, saveConfig, teachConfig } from '../src/config.js';
 import { addressSet, intersectionCount, addressSketch, sketchJaccard } from '../src/npz.js';
 import { PATCH_STATUSES, parseStatus } from '../src/types.js';
-import { delegateHeader, delegateMessage, parseDelegation, verifyDelegation } from '../src/teach-auth.js';
+import { delegateHeader, delegateMessage, parseDelegation, verifyDelegation } from '../src/delegation.js';
 import type { PatchAnchor, Attestation, Challenge, Contributor, LedgerRecord } from '../src/types.js';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';

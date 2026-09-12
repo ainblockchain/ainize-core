@@ -104,6 +104,17 @@ export const nodeConfigSchema = z.object({
   }),
   identity: z.object({ privateKey: z.string(), address: z.string(), publicKey: z.string() }),
   operatorPasswordHash: z.string().optional(),
+  /**
+   * Addresses that may sign in as this node's operator instead of typing the password.
+   *
+   * The node's OWN address is always allowed and is not listed here — whoever holds the node's key already owns
+   * everything the node published, so requiring them to also type a password protects nothing. This list is for
+   * the other people: an AIN Wallet address on a laptop, a colleague, a second machine.
+   *
+   * Empty (the default) means signature sign-in is the node's own key only. It is never a way IN for a stranger:
+   * an address has to be put here by someone who already has operator access.
+   */
+  operatorAddresses: z.array(z.string().regex(/^0x[0-9a-fA-F]{40}$/)).optional(),
   runtime: z.object({
     repo: z.string().optional(),
     api: url.optional(),
