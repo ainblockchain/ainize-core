@@ -261,6 +261,24 @@ export class AinLedger implements Ledger {
     };
   }
 
+  /**
+   * `/apps/knowledge/market/lessons/$node/$job` — the training run itself, on chain.
+   *
+   * Written at transitions, not per step: a progress bar is 20 writes a lesson and this is a blockchain. The value
+   * replaces itself, so the path holds the latest state and the chain holds the history of how it got there.
+   *
+   * Failures are swallowed to a `null`. A chain that is down, out of gas or refusing the write must not fail the
+   * training run that is otherwise going fine — but the caller is told it did not happen, rather than being handed
+   * a path nothing is at.
+   */
+  async noteLesson(jobId: string, value: Record<string, unknown>): Promise<{ path: string; tx_hash: string } | null> {
+    const path = `${MARKET}/lessons/${this.identity.address}/${jobId}`;
+    try {
+      const tx_hash = await this.set(path, { ...value, node: this.identity.address, job: jobId, updated_at: Date.now() });
+      return { path, tx_hash };
+    } catch { return null; }
+  }
+
   // ---------------------------------------------------------------- chain helpers
   private tx(extra: Record<string, unknown> = {}) {
     return { nonce: -1, gas_price: this.opts.gasPrice ?? 0, ...extra };

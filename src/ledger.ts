@@ -115,6 +115,19 @@ export interface Ledger {
   list(opts?: { since?: number; kind?: RecordKind; limit?: number }): Promise<LedgerRecord[]>;
   get(hash: string): Promise<LedgerRecord | null>;
   hashes(since?: number): Promise<string[]>;
+  /**
+   * Put a lesson's current state on the permanent record, and say where it went.
+   *
+   * NOT a ledger record. A lesson in progress is not a claim anybody signs or verifies — it is a job that may yet
+   * fail — so it must not join the record DAG that anchors and attestations live in. It is written to a path of
+   * its own, replacing itself at each transition, and the only thing the marketplace takes from it is that a
+   * training run was happening at this node, at this time, on this dataset, before whatever was published.
+   *
+   * Implemented by the AIN ledger only. A node on a local ledger has no chain to write to and gets `null`, which
+   * the API passes through unchanged rather than inventing a path that does not exist.
+   */
+  noteLesson?(jobId: string, value: Record<string, unknown>): Promise<{ path: string; tx_hash: string } | null>;
+
   /** Local-ledger replication: records received after a peer-local cursor. */
   sync?(since?: number, limit?: number): Promise<{ records: LedgerRecord[]; cursor: number }>;
 
