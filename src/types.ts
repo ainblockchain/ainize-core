@@ -866,6 +866,15 @@ export interface TeachConfig {
     timeoutMs: number;
     minFreeGpuMb: number;
     idleStopMin: number;
+    /**
+     * The two knobs that decide peak GPU memory. Unset, both are derived from the question count — and both
+     * derivations give the LARGEST value to the LARGEST lesson, which is backwards: they raise the pressure
+     * exactly on the runs that take hours to reach the point of failing, and the failure lands at the first
+     * training step, after the whole baseline probe.
+     */
+    microBatch?: number;
+    /** Contrast pairs. Unset = ceil(rows/2) capped at 64. Fewer pairs means less protection for unrelated answers. */
+    maxContrast?: number;
   };
   /** Locality gate: fixed prompts whose greedy answers must stay identical for at least `minSame` of them. */
   locality: { prompts: string[]; minSame: number };
