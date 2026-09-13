@@ -124,18 +124,24 @@ export const nodeConfigSchema = z.object({
    * always, and whatever `operatorAddresses` lists.
    *
    * Left in the schema on purpose. Dropping it would make every node that has one fail to start, which is a
-   * worse failure than carrying a dead field for a version.
+   * worse failure than carrying a dead field for a version. Still in PROTECTED_CONFIG_KEYS for the same reason
+   * in reverse: nothing writes it any more, so `config set` has nothing to offer but the illusion that it does.
    */
   operatorPasswordHash: z.string().optional(),
   /**
-   * Addresses that may sign in as this node's operator, besides the node's own key.
+   * Addresses that OWN this node, besides its own key.
    *
-   * The node's OWN address is always allowed and is not listed here — whoever holds the node's key already owns
-   * everything the node published, so requiring them to also type a password protects nothing. This list is for
-   * the other people: an AIN Wallet address on a laptop, a colleague, a second machine.
+   * Not "who may sign in" — anyone may sign in, and doing so gives them a name, not a permission. This is the
+   * list of addresses that may RUN the node: publish, sell, spend its wallet, change its configuration.
    *
-   * Empty (the default) means signature sign-in is the node's own key only. It is never a way IN for a stranger:
-   * an address has to be put here by someone who already has operator access.
+   * The node's own address is always one of them and is not listed here; whoever holds that key already owns
+   * everything the node published. This list is for the other people — a wallet on a laptop, a colleague, a
+   * second machine.
+   *
+   * It is the RECOVERY path, and that is why it lives in a file rather than only in the database: it is edited
+   * with a text editor on the machine itself, so it survives a lost session, a lost database and a wallet that
+   * will not connect. An owner can also grant ownership from a browser, which is written to the node's `owners`
+   * table instead — that one an API call can take back, and this one it cannot.
    */
   operatorAddresses: z.array(z.string().regex(/^0x[0-9a-fA-F]{40}$/)).optional(),
   runtime: z.object({
@@ -160,8 +166,19 @@ export const nodeConfigSchema = z.object({
      * thing from the network pretending the risk is not there.
      */
     sellUnverified: z.boolean().optional(),
-    /** @deprecated never escrowed (item 127) — kept so configs written before 2026-09 still validate */
+    /** @deprecated never escrowed (item 127) — kept so configs written before 2026-09 still validate. See `requireBond`. */
     stake: amount.optional(),
+    /**
+     * The smallest bond this node will count an attestation from, in AIN (`bond.ts`).
+     *
+     * Read from the chain per verifier (`/staking/knowledge/<address>`), never taken from what a peer says about
+     * itself — which is the whole difference between this and the `stake` field above. Floored at
+     * NETWORK_MIN_VERIFIER_BOND: an operator may demand more of the verifiers it counts and may never demand less,
+     * because knowledge this node lists as VERIFIED travels to peers that hold the floor.
+     *
+     * Absent means the network minimum, which is what every node that never touches this key enforces.
+     */
+    requireBond: z.number().min(0, 'must not be negative').optional(),
     allowSelfAttest: z.boolean(),
     intervalMs: positive,
     auto: z.boolean().optional(),

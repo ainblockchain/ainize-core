@@ -401,6 +401,40 @@ export class AinLedger implements Ledger {
   }
 
   /**
+   * What ONE address has staked on the knowledge app — its verifier bond (`bond.ts`).
+   *
+   * The same staking the app itself uses for its state budget, read per address instead of in total. That it is the
+   * chain's own mechanism is the point: the lock and its release schedule belong to the chain, so no contract of
+   * ours holds anyone's money and there is no custodian to trust. A node that has never staked has no node under
+   * `/staking`, which reads back as null and counts as 0 — the same as an account the chain has never seen.
+   *
+   * Always read, never accepted from the verifier being counted: a bond a peer asserts about itself is the
+   * self-declared `stake` field that was deleted for being worthless (item 127).
+   */
+  async bondOf(address = this.identity.address): Promise<number> {
+    const v = await this.ain.db.ref(`/staking/knowledge/${address}/0/balance`).getValue();
+    return Number(v ?? 0) || 0;
+  }
+
+  /** Add to this identity's bond. Same write as `stakeApp` — named for what the node is doing with it. */
+  async bondStake(amount: number): Promise<string> {
+    if (!(Number.isFinite(amount) && amount > 0)) throw new Error(`bond amount must be a positive number, got ${amount}`);
+    return this.stakeApp(amount);
+  }
+
+  /**
+   * Begin withdrawing this identity's bond. The chain holds the funds for its own unbonding period; `bond.ts` stops
+   * counting the attestations immediately, which is the stricter of the two and the one that matters — a bond that
+   * can be recalled the moment it has been shown backs nothing.
+   */
+  async bondUnstake(amount: number): Promise<string> {
+    if (!(Number.isFinite(amount) && amount > 0)) throw new Error(`unbond amount must be a positive number, got ${amount}`);
+    const ref = `/staking/knowledge/${this.identity.address}/0/unstake/${Date.now()}/value`;
+    const res = await this.ain.db.ref(ref).setValue({ value: amount, ...this.tx() });
+    return AinLedger.assertOk(res, 'unstake knowledge app');
+  }
+
+  /**
    * One-time app setup (run by the first node = app admin): ain-js setupApp() + market rules + app stake.
    * Idempotent: if the app exists and we are not admin, only the stake top-up (if we can afford it) is attempted.
    */

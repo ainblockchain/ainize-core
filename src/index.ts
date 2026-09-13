@@ -14,5 +14,6 @@ export * from './events.js';
 export * from './bytes.js';
 export * from './teach-auth.js';
 export * from './scheme.js';
+export * from './bond.js';
 export * from './delegation.js';
 export * from './ops.js';
