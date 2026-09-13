@@ -17,6 +17,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createIdentity, identityFromPrivateKey, signMessage, verifyMessage, verifyEip191, verifyAuth, hashEip191 } from '../src/identity.js';
 
 import { createHmac } from 'node:crypto';
@@ -118,4 +120,15 @@ test('the digest matches the one every Ethereum library computes', () => {
     `0x${hashEip191('hello world').toString('hex')}`,
     '0xd9eba16ed0ecae432b71fe008c98cc872bb4cc214d3220a36f365326cf807d68',
   );
+});
+
+test('there is no password anywhere: nothing hashes one, nothing checks one', () => {
+  // The operator password was the one shared secret in a product whose identity model is otherwise "a key
+  // signs for itself". The route that took it is gone, the `ainize password` command is gone, and as of this
+  // commit so are the scrypt helpers — but `operatorPasswordHash` stays in the config SCHEMA, because
+  // dropping it would make every node that has one fail to start over a field nothing reads.
+  const src = readFileSync(fileURLToPath(new URL('../src/identity.ts', import.meta.url)), 'utf-8');
+  for (const dead of ['hashPassword', 'verifyPassword', 'scryptSync', 'timingSafeEqual']) {
+    assert.ok(!src.includes(dead), `${dead} is back in identity.ts — the password is meant to be gone`);
+  }
 });

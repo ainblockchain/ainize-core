@@ -128,7 +128,7 @@ export const nodeConfigSchema = z.object({
    */
   operatorPasswordHash: z.string().optional(),
   /**
-   * Addresses that may sign in as this node's operator instead of typing the password.
+   * Addresses that may sign in as this node's operator, besides the node's own key.
    *
    * The node's OWN address is always allowed and is not listed here — whoever holds the node's key already owns
    * everything the node published, so requiring them to also type a password protects nothing. This list is for

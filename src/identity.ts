@@ -4,7 +4,7 @@
  * so a node's signature over a ledger record is verifiable by any peer with only the address.
  */
 import { createRequire } from 'node:module';
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 
 const require = createRequire(import.meta.url);
 // ain-util is CommonJS
@@ -125,17 +125,4 @@ export function checksum(address: string): string {
   return ainUtil.toChecksumAddress(address);
 }
 
-/** Operator password hashing (scrypt) for the web console login. */
-export function hashPassword(password: string): string {
-  const salt = randomBytes(16);
-  const key = scryptSync(password, salt, 32);
-  return `scrypt$${salt.toString('hex')}$${key.toString('hex')}`;
-}
 
-export function verifyPassword(password: string, stored: string): boolean {
-  const [alg, saltHex, keyHex] = stored.split('$');
-  if (alg !== 'scrypt' || !saltHex || !keyHex) return false;
-  const key = scryptSync(password, Buffer.from(saltHex, 'hex'), 32);
-  const expected = Buffer.from(keyHex, 'hex');
-  return key.length === expected.length && timingSafeEqual(key, expected);
-}

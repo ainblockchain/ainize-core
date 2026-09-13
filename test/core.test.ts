@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { pythonJson, canonicalJson, sha256Hex } from '../src/canonical.js';
-import { createIdentity, signMessage, verifyMessage, hashPassword, verifyPassword } from '../src/identity.js';
+import { createIdentity, signMessage, verifyMessage } from '../src/identity.js';
 import { LocalLedger } from '../src/local-ledger.js';
 import { deriveCatalog, royaltyPlan, royaltySplit, sanitizeContributors, validateContributors, validatePrice, ValidationError, verificationCount } from '../src/catalog.js';
 import { toAin, fromAin, withEmptyArrays, recordsFromMarketState } from '../src/ain-ledger.js';
@@ -32,8 +32,6 @@ test('identity sign/verify round-trip with ain-util', () => {
   const sig = signMessage(msg, id.privateKey);
   assert.ok(verifyMessage(msg, sig, id.address));
   assert.ok(!verifyMessage(msg + '0', sig, id.address));
-  assert.ok(verifyPassword('pw', hashPassword('pw')));
-  assert.ok(!verifyPassword('nope', hashPassword('pw')));
 });
 
 test('LocalLedger appends signed records and imports the prototype chain intact', async () => {
