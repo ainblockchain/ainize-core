@@ -15,6 +15,7 @@ export * from './types.js';
 export { verificationCount } from './catalog.js';
 // Delegation, for the AIN Wallet sign-in: `delegation.ts` imports NOTHING — the signature check is a parameter, so
 // the browser passes noble's and the node passes ain-util's, and the boundary above holds either way.
+export * from './scheme.js';
 export * from './delegation.js';
 export type {
   Ledger, LedgerEvents, LedgerInfo, PayoutRecord, PriceRecord, RecordBody,

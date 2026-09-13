@@ -20,6 +20,7 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createIdentity, identityFromPrivateKey, signMessage, verifyMessage, verifyEip191, verifyAuth, hashEip191 } from '../src/identity.js';
+import { delegateHeader, delegateMessage, parseDelegation, verifyDelegation } from '../src/delegation.js';
 
 import { createHmac } from 'node:crypto';
 import * as secp from '@noble/secp256k1';
@@ -131,4 +132,38 @@ test('there is no password anywhere: nothing hashes one, nothing checks one', ()
   for (const dead of ['hashPassword', 'verifyPassword', 'scryptSync', 'timingSafeEqual']) {
     assert.ok(!src.includes(dead), `${dead} is back in identity.ts — the password is meant to be gone`);
   }
+});
+
+test('a delegation says which scheme signed it, and is checked under that one', () => {
+  // The wallet signs ONE thing — permission for a browser key to act as it — and a MetaMask wallet can only sign
+  // it EIP-191. Nothing else about delegation changes: the browser key still signs every request, the header still
+  // names one node, one key and an expiry. What had to change is that the header says how to check itself.
+  const owner = identityFromPrivateKey('b22c95ffc4a5c096f7d7d0487ba963ce6ac945bdc91c79b64ce209de289bec96');
+  const delegate = createIdentity();
+  const node = createIdentity().address;
+  const now = Date.now();
+  const expires = now + 60 * 60_000;
+  const message = delegateMessage({ node, delegate: delegate.address, expires });
+  const check = (m: string, sig: string, addr: string, scheme: 'ain' | 'eip191') => verifyAuth(scheme, m, sig, addr);
+
+  const wallet = delegateHeader({ owner: owner.address, expires, signature: personalSign(message, owner.privateKey), scheme: 'eip191' });
+  assert.equal(parseDelegation(wallet)?.scheme, 'eip191');
+  assert.equal(verifyDelegation(wallet, { node, delegate: delegate.address, now }, check), owner.address);
+
+  // An `ain` header is written exactly as it was before there was a fourth field, and still means `ain`.
+  const key = delegateHeader({ owner: owner.address, expires, signature: signMessage(message, owner.privateKey) });
+  assert.equal(key.split(':').length, 3, 'nothing already signed has to be re-signed for a node that reads four fields');
+  assert.equal(parseDelegation(key)?.scheme, 'ain');
+  assert.equal(verifyDelegation(key, { node, delegate: delegate.address, now }, check), owner.address);
+
+  // The scheme is not a hint the verifier may ignore, and not something the presenter may relabel: the signature
+  // and the name have to agree, in both directions.
+  const mislabelled = `${owner.address}:${expires}:${signMessage(message, owner.privateKey)}:eip191`;
+  assert.equal(verifyDelegation(mislabelled, { node, delegate: delegate.address, now }, check), null);
+  const unlabelled = `${owner.address}:${expires}:${personalSign(message, owner.privateKey)}`;
+  assert.equal(verifyDelegation(unlabelled, { node, delegate: delegate.address, now }, check), null);
+
+  // A scheme nobody implements is not silently read as the default one.
+  assert.equal(parseDelegation(`${owner.address}:${expires}:0xdead:secp256k1`), null);
+  assert.equal(parseDelegation(`${owner.address}:${expires}:0xdead:`), null);
 });

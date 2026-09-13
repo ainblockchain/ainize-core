@@ -5,6 +5,7 @@
  */
 import { createRequire } from 'node:module';
 import { randomBytes } from 'node:crypto';
+import type { SignatureScheme } from './scheme.js';
 
 const require = createRequire(import.meta.url);
 // ain-util is CommonJS
@@ -99,8 +100,11 @@ export function verifyEip191(message: string, signature: string, address: string
   }
 }
 
-/** Which scheme produced a signature. `ain` is a key this product generated; `eip191` is a person's wallet. */
-export type AuthScheme = 'ain' | 'eip191';
+/**
+ * Which scheme produced a signature. The definition lives in `scheme.ts`, which imports nothing, because
+ * `delegation.ts` needs the same name and that file is what keeps node:crypto out of the browser bundle.
+ */
+export type AuthScheme = SignatureScheme;
 
 /**
  * Verify a signature under a NAMED scheme.

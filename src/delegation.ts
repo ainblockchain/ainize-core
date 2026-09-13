@@ -1,11 +1,13 @@
 /**
  * Delegation — an AIN Wallet owner authorising a browser key, signed once.
  *
- * Its own module, and IMPORTING NOTHING, because the browser needs it. `browser.ts` is the boundary that keeps
- * `node:crypto` and ain-js out of the web bundle, and its rule is that a runtime value added there is how that
- * guarantee gets lost. This file has no imports to lose it with: `verifyDelegation` takes the signature check as a
- * parameter, so the node passes ain-util's and the browser passes noble's, and neither drags the other in.
+ * Its own module, and importing NO RUNTIME VALUE, because the browser needs it. `browser.ts` is the boundary that
+ * keeps `node:crypto` and ain-js out of the web bundle, and its rule is that a runtime value added there is how
+ * that guarantee gets lost. `verifyDelegation` takes the signature check as a parameter, so the node passes
+ * ain-util's and the browser passes noble's, and neither drags the other in. The one import here is a type, which
+ * erases at compile time and cannot carry anything with it.
  */
+import type { SignatureScheme } from './scheme.js';
 /** Header that carries the delegation, beside the ordinary `x-ainize-auth`. */
 export const DELEGATE_HEADER = 'x-ainize-delegate';
 /** The longest a node will honour one delegation, however long the owner wrote. */
@@ -41,22 +43,37 @@ export function delegateMessage(t: { node: string; delegate: string; expires: nu
   return ['delegate', t.node, t.delegate.toLowerCase(), String(t.expires)].join(':');
 }
 
-export interface Delegation { owner: string; expires: number; signature: string }
+export interface Delegation { owner: string; expires: number; signature: string; scheme: SignatureScheme }
 
-/** Parse `x-ainize-delegate: <owner>:<expires>:<sig>`. Returns null on anything malformed. */
+/**
+ * Parse `x-ainize-delegate: <owner>:<expires>:<sig>[:<scheme>]`. Returns null on anything malformed.
+ *
+ * The scheme is a fourth field rather than something read off the signature's length — 97 bytes for `ain`, 65 for
+ * `eip191` would in fact tell them apart, and that is exactly the inference this must not make. Whoever presents
+ * a signature would then be choosing which rules verify it, and the two rules do not carry the same claim: one
+ * says a person approved a prompt, the other says a key acted alone.
+ *
+ * A header with no fourth field means `ain`, which is what every delegation written before wallets existed is.
+ */
 export function parseDelegation(header: string | undefined | null): Delegation | null {
   if (!header) return null;
   const parts = header.split(':');
-  if (parts.length !== 3) return null;
-  const [owner, expStr, signature] = parts;
+  if (parts.length !== 3 && parts.length !== 4) return null;
+  const [owner, expStr, signature, schemeStr] = parts;
   const expires = Number(expStr);
-  if (!/^0x[0-9a-fA-F]{40}$/.test(owner ?? '') || !Number.isFinite(expires) || !signature) return null;
-  return { owner, expires, signature };
+  const scheme: SignatureScheme | null = schemeStr === undefined ? 'ain' : schemeStr === 'ain' || schemeStr === 'eip191' ? schemeStr : null;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(owner ?? '') || !Number.isFinite(expires) || !signature || !scheme) return null;
+  return { owner, expires, signature, scheme };
 }
 
-/** The header an owner's wallet produces once, and every delegated request then carries unchanged. */
-export function delegateHeader(d: Delegation): string {
-  return `${d.owner}:${d.expires}:${d.signature}`;
+/**
+ * The header an owner's wallet produces once, and every delegated request then carries unchanged.
+ *
+ * An `ain` delegation is written with three fields, byte for byte what it was before there was a fourth. Nothing
+ * old has to be re-signed, and nothing old starts failing against a node that has learned to read a fourth field.
+ */
+export function delegateHeader(d: { owner: string; expires: number; signature: string; scheme?: SignatureScheme }): string {
+  return d.scheme === 'eip191' ? `${d.owner}:${d.expires}:${d.signature}:eip191` : `${d.owner}:${d.expires}:${d.signature}`;
 }
 
 /**
@@ -68,7 +85,7 @@ export function delegateHeader(d: Delegation): string {
 export function verifyDelegation(
   header: string | undefined | null,
   ctx: { node: string; delegate: string; now?: number; maxMs?: number },
-  verify: (message: string, signature: string, address: string) => boolean,
+  verify: (message: string, signature: string, address: string, scheme: SignatureScheme) => boolean,
 ): string | null {
   const d = parseDelegation(header);
   if (!d) return null;
@@ -77,7 +94,7 @@ export function verifyDelegation(
   if (d.expires - now > (ctx.maxMs ?? DELEGATION_MAX_MS)) return null;
   if (d.owner.toLowerCase() === ctx.delegate.toLowerCase()) return null;   // a key delegating to itself proves nothing
   const message = delegateMessage({ node: ctx.node, delegate: ctx.delegate, expires: d.expires });
-  return verify(message, d.signature, d.owner) ? d.owner : null;
+  return verify(message, d.signature, d.owner, d.scheme) ? d.owner : null;
 }
 
 // ------------------------------------------------------------------ operator sign-in by signature
