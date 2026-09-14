@@ -20,6 +20,7 @@
  */
 import { createRequire } from 'node:module';
 import { canonicalJson, sha256Hex } from './canonical.js';
+import { validateInferenceBatch, type InferenceBatch } from './inference-record.js';
 import { MAX_CONTRIBUTORS } from './types.js';
 import type { Ledger, LedgerEvents, LedgerInfo, PayoutRecord, PriceRecord, RecordBody, RetireRecord, SubscriptionRecord, SupersedeRecord } from './ledger.js';
 import type {
@@ -280,6 +281,16 @@ export class AinLedger implements Ledger {
     } catch { return null; }
   }
 
+  async noteInferenceBatch(batch: InferenceBatch): Promise<{ path: string; tx_hash: string } | null> {
+    const value = { ...validateInferenceBatch(batch), node: this.identity.address };
+    const batchId = sha256Hex(canonicalJson(value));
+    const path = `${MARKET}/inference_batches/${this.identity.address}/${batchId}`;
+    try {
+      const tx_hash = await this.set(path, value);
+      return { path, tx_hash };
+    } catch { return null; }
+  }
+
   // ---------------------------------------------------------------- chain helpers
   private tx(extra: Record<string, unknown> = {}) {
     return { nonce: -1, gas_price: this.opts.gasPrice ?? 0, ...extra };
@@ -483,6 +494,7 @@ export class AinLedger implements Ledger {
       [`${MARKET}/branches/$branch`, "auth.addr === newData.owner && (data === null || data.owner === auth.addr)"],
       [`${MARKET}/nodes/$addr`, 'auth.addr === $addr'],
       [`${MARKET}/lessons/$node/$job`, 'auth.addr === $node && util.isDict(newData) && newData.node === $node && newData.job === $job'],
+      [`${MARKET}/inference_batches/$node/$batch`, 'auth.addr === $node && data === null && util.isDict(newData) && newData.node === $node'],
       // A supersede said `auth.addr !== ''` — any address at all could mark ANYBODY's anchor superseded, and the
       // record then sat on the permanent public record where every node applied it. The writer goes in the path,
       // the way `retires` and `disputes` already do it, so the rule engine can name them; readers then check that

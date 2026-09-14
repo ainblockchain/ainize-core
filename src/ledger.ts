@@ -14,6 +14,7 @@
 import type {
   Attestation, BranchInfo, Challenge, Dispute, LedgerRecord, PatchAnchor, PeerInfo, RecordKind, Settlement,
 } from './types.js';
+import type { InferenceBatch } from './inference-record.js';
 
 export interface SupersedeRecord {
   old_patch_id: string;
@@ -127,6 +128,7 @@ export interface Ledger {
    * the API passes through unchanged rather than inventing a path that does not exist.
    */
   noteLesson?(jobId: string, value: Record<string, unknown>): Promise<{ path: string; tx_hash: string } | null>;
+  noteInferenceBatch?(batch: InferenceBatch): Promise<{ path: string; tx_hash: string } | null>;
 
   /** Local-ledger replication: records received after a peer-local cursor. */
   sync?(since?: number, limit?: number): Promise<{ records: LedgerRecord[]; cursor: number }>;
