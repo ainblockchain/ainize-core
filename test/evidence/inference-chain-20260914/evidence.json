@@ -1,0 +1,222 @@
+{
+  "scope": "isolated real-chain integration; synthetic receipt, not inference performance",
+  "image": "sha256:cebf14bf492e5f5e39f3e9ae2681c44c28984e36d45b51b8a8a96f539208cef0",
+  "resources": {
+    "cpus": 2,
+    "memoryBytes": 4294967296,
+    "network": "internal"
+  },
+  "rulePath": "/apps/knowledge/market/inference_batches/$node/$batch",
+  "rule": {
+    ".rule": {
+      "write": "auth.addr === $node && data === null && util.isDict(newData) && newData.node === $node"
+    }
+  },
+  "submitted": {
+    "path": "/apps/knowledge/market/inference_batches/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/e5a76136101914a4be3d57979bd275da6465c761b6a968dc143f2bd6c0232b7c",
+    "tx_hash": "0x17f32e81b84370c08b48e5f5101b47c225eeb2eb3a49f0abbe61b4ce73272a4b"
+  },
+  "transaction": {
+    "state": "FINALIZED",
+    "number": 11,
+    "index": 0,
+    "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+    "timestamp": 1789350537594,
+    "is_executed": true,
+    "is_finalized": true,
+    "tracked_at": 1789350540306,
+    "executed_at": 1789350537616,
+    "finalized_at": 1789350540306,
+    "exec_result": {
+      "gas_amount_total": {
+        "bandwidth": {
+          "service": 0,
+          "app": {
+            "knowledge": 1
+          }
+        },
+        "state": {
+          "service": 8,
+          "app": {
+            "knowledge": 2578
+          }
+        }
+      },
+      "gas_cost_total": 0,
+      "code": 0,
+      "bandwidth_gas_amount": 1,
+      "gas_amount_charged": 8
+    },
+    "transaction": {
+      "tx_body": {
+        "operation": {
+          "type": "SET_VALUE",
+          "ref": "/apps/knowledge/market/inference_batches/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/e5a76136101914a4be3d57979bd275da6465c761b6a968dc143f2bd6c0232b7c",
+          "value": {
+            "version": 1,
+            "model_id": "fixture/model",
+            "request_count": 1,
+            "started_at": 1789350536593,
+            "finished_at": 1789350537593,
+            "receipt_root": "74c1f2f42dfe2cd398dce60e4a4d4f65d0dba9621e5625d7340d96e6fc259df6",
+            "node": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+          },
+          "is_global": false
+        },
+        "nonce": -1,
+        "timestamp": 1789350537594,
+        "gas_price": 0
+      },
+      "signature": "0x17f32e81b84370c08b48e5f5101b47c225eeb2eb3a49f0abbe61b4ce73272a4bad9ab5e125a752c2c9f3b6d512c4d117fbb40ae857f8b53ca92cb0737a01d9d23b3a9e60f32c19696ad1210c5516f29faa39fd39e6583692b4513cbb8ded24de1c",
+      "hash": "0x17f32e81b84370c08b48e5f5101b47c225eeb2eb3a49f0abbe61b4ce73272a4b",
+      "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+    },
+    "receipt": {
+      "code": 0,
+      "gas_amount_charged": 8,
+      "gas_cost_total": 0
+    }
+  },
+  "block": {
+    "last_votes": [
+      {
+        "tx_body": {
+          "operation": {
+            "type": "SET",
+            "op_list": [
+              {
+                "type": "SET_VALUE",
+                "ref": "/consensus/number/10/propose",
+                "value": {
+                  "number": 10,
+                  "epoch": 148355337,
+                  "validators": {
+                    "0x00ADEc28B6a845a085e03591bE7550dd68673C1C": {
+                      "stake": 10000000,
+                      "proposal_right": true
+                    }
+                  },
+                  "total_at_stake": 10000000,
+                  "proposer": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                  "block_hash": "0x34a174b8e389b1ae8848048af12eff8bb2140ad3510d5390a40b2461b5221887",
+                  "last_hash": "0x3906be6f77eb04493edc4144c116d4012abd5bab1178dd05bb2695a17a438e5f",
+                  "timestamp": 1789350537401,
+                  "gas_cost_total": 0
+                }
+              }
+            ]
+          },
+          "nonce": -1,
+          "gas_price": 0,
+          "timestamp": 1789350537492
+        },
+        "signature": "0x1a97800065adcb4a3659602eda44ce9982d3bdb0d909ad02761f7ac68b547143018b78a3e7d97ce2e672cd032fc0bc6ce110eef58d16aceb863a635fe72675da5a0ec95b38491dc0df63571008d260d960531abcb3f715fc8143c635f96b12d21c",
+        "hash": "0x1a97800065adcb4a3659602eda44ce9982d3bdb0d909ad02761f7ac68b547143",
+        "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+      },
+      {
+        "tx_body": {
+          "operation": {
+            "type": "SET_VALUE",
+            "ref": "/consensus/number/10/0x34a174b8e389b1ae8848048af12eff8bb2140ad3510d5390a40b2461b5221887/vote/0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+            "value": {
+              "block_hash": "0x34a174b8e389b1ae8848048af12eff8bb2140ad3510d5390a40b2461b5221887",
+              "stake": 10000000,
+              "is_against": false,
+              "vote_nonce": 1789350537574
+            }
+          },
+          "nonce": -1,
+          "gas_price": 0,
+          "timestamp": 1789350537574
+        },
+        "signature": "0x18913d99918b2bef28efcddecc89883dc5241c9c0ef6839b1487c6263c2f47861fcb75de586d961131133a9a8c53bb0e8477f31da01436461704c0ea599af881062303ba963d7c9b82ad5135578499ea0af123bc2b12153316b2b5074cc175641b",
+        "hash": "0x18913d99918b2bef28efcddecc89883dc5241c9c0ef6839b1487c6263c2f4786",
+        "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+      }
+    ],
+    "evidence": {},
+    "transactions": [
+      {
+        "tx_body": {
+          "operation": {
+            "type": "SET_VALUE",
+            "ref": "/apps/knowledge/market/inference_batches/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/e5a76136101914a4be3d57979bd275da6465c761b6a968dc143f2bd6c0232b7c",
+            "value": {
+              "version": 1,
+              "model_id": "fixture/model",
+              "request_count": 1,
+              "started_at": 1789350536593,
+              "finished_at": 1789350537593,
+              "receipt_root": "74c1f2f42dfe2cd398dce60e4a4d4f65d0dba9621e5625d7340d96e6fc259df6",
+              "node": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+            },
+            "is_global": false
+          },
+          "nonce": -1,
+          "timestamp": 1789350537594,
+          "gas_price": 0
+        },
+        "signature": "0x17f32e81b84370c08b48e5f5101b47c225eeb2eb3a49f0abbe61b4ce73272a4bad9ab5e125a752c2c9f3b6d512c4d117fbb40ae857f8b53ca92cb0737a01d9d23b3a9e60f32c19696ad1210c5516f29faa39fd39e6583692b4513cbb8ded24de1c",
+        "hash": "0x17f32e81b84370c08b48e5f5101b47c225eeb2eb3a49f0abbe61b4ce73272a4b",
+        "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+      }
+    ],
+    "receipts": [
+      {
+        "code": 0,
+        "gas_amount_charged": 8,
+        "gas_cost_total": 0
+      }
+    ],
+    "last_hash": "0x34a174b8e389b1ae8848048af12eff8bb2140ad3510d5390a40b2461b5221887",
+    "last_votes_hash": "0xb665f71e31ca47e54806f1cac4ff0c8a9194633b0b9e704201a073e914f5c0af",
+    "evidence_hash": "0xd35126dcb36a3c4b4ef04c4eff63edecbc9eacff867d1c348c1abaf82567a8f8",
+    "transactions_hash": "0xf3b62cbfb01faee71d6288f274f12140fb136faffab0cce48656a6dec8f8258b",
+    "receipts_hash": "0xf7cdcf64ac82993eaf5c594938fc4498f1b8abe696743b29e4fcac4be540ca05",
+    "number": 11,
+    "epoch": 148355338,
+    "timestamp": 1789350538306,
+    "state_proof_hash": "0x9b6c0e24d234d241ff86175238e75e07f487dcb43039b39a1d40b25b2b69e75a",
+    "proposer": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+    "validators": {
+      "0x00ADEc28B6a845a085e03591bE7550dd68673C1C": {
+        "stake": 10000000,
+        "proposal_right": true
+      }
+    },
+    "gas_amount_total": 8,
+    "gas_cost_total": 0,
+    "hash": "0x7dac46bc52afb1976aca7228dfc95ed9e6958988a46cd17a3949214dfcf31b1a",
+    "size": 5886
+  },
+  "receipts": [
+    {
+      "id": "synthetic-chain-integration-only",
+      "model_id": "fixture/model",
+      "completed_at": 1789350537593
+    }
+  ],
+  "overwrite": {
+    "tx_hash": "0x01f72646295a446ccc8881a6dc015b5694f9aba76fb318bb88aa48c9665b41cd",
+    "result": {
+      "gas_amount_total": {
+        "bandwidth": {
+          "service": 0,
+          "app": {
+            "knowledge": 1
+          }
+        },
+        "state": {
+          "service": 0
+        }
+      },
+      "gas_cost_total": 0,
+      "message": "Write rule evaluated false: [auth.addr === $node && data === null && util.isDict(newData) && newData.node === $node] at '/apps/knowledge/market/inference_batches/$node/$batch' for value path '/apps/knowledge/market/inference_batches/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/e5a76136101914a4be3d57979bd275da6465c761b6a968dc143f2bd6c0232b7c' with path vars '{\"$batch\":\"e5a76136101914a4be3d57979bd275da6465c761b6a968dc143f2bd6c0232b7c\",\"$node\":\"0x00ADEc28B6a845a085e03591bE7550dd68673C1C\"}', data '{\"version\":1,\"model_id\":\"fixture/model\",\"request_count\":1,\"started_at\":1789350536593,\"finished_at\":1789350537593,\"receipt_root\":\"74c1f2f42dfe2cd398dce60e4a4d4f65d0dba9621e5625d7340d96e6fc259df6\",\"node\":\"0x00ADEc28B6a845a085e03591bE7550dd68673C1C\"}', newData '{\"version\":1,\"model_id\":\"fixture/model\",\"request_count\":1,\"started_at\":1789350536593,\"finished_at\":1789350537593,\"receipt_root\":\"74c1f2f42dfe2cd398dce60e4a4d4f65d0dba9621e5625d7340d96e6fc259df6\",\"node\":\"0x00ADEc28B6a845a085e03591bE7550dd68673C1C\"}', auth '{\"addr\":\"0x00ADEc28B6a845a085e03591bE7550dd68673C1C\"}', timestamp '1789350540859'",
+      "code": 12103,
+      "bandwidth_gas_amount": 1,
+      "gas_amount_charged": 0
+    }
+  },
+  "overwriteRejected": true
+}
