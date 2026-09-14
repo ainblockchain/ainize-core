@@ -37,3 +37,7 @@ export AIN_INFERENCE_TEST_URL="http://$ADDRESS:8081"
 export AIN_INFERENCE_TEST_IMAGE="$IMAGE"
 cd "$ROOT"
 timeout 180 node --import tsx scripts/verify-inference-chain.ts "$OUTPUT/evidence.json"
+if [[ -n "${AIN_TEST_FOLLOWUP:-}" ]]; then
+  [[ "$AIN_TEST_FOLLOWUP" = /* && -f "$AIN_TEST_FOLLOWUP" ]] || { echo 'Follow-up must be an existing absolute local script path' >&2; exit 1; }
+  bash "$AIN_TEST_FOLLOWUP" "$OUTPUT"
+fi

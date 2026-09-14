@@ -61,6 +61,15 @@ An EXIT/INT/TERM cleanup removes the temporary container and its network, includ
 after assertion failure or the verifier's 180-second timeout. No EC2 instances,
 GPU workers or pre-existing containers are started/stopped by this script.
 
+For a separate integration step while this isolated chain remains alive, set
+`AIN_TEST_FOLLOWUP` to an existing absolute local shell-script path. The launcher
+passes its output directory as the first argument and exports
+`AIN_INFERENCE_TEST_URL`. The follow-up executes only after the chain verification
+succeeds; its failure is propagated, then normal chain/network cleanup still runs.
+The follow-up is responsible for its own resources and timeout. With this option,
+the no-GPU-process guarantee above applies to the core launcher, not arbitrary
+code in the explicitly selected follow-up.
+
 ## Scope of the recorded evidence
 
 The first successful check included the native record in block 9, and the
