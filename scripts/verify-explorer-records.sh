@@ -15,7 +15,11 @@ SOURCE=$(cd "$SOURCE" && pwd)
 BUILD=$(cd "$BUILD" && pwd)
 OUTPUT=$(cd "$OUTPUT" && pwd)
 cd "$ROOT"
-bash scripts/verify-training-state.sh "$OUTPUT"
+case "${AINSCAN_TRAINING_SOURCE:-synthetic}" in
+  synthetic) bash scripts/verify-training-state.sh "$OUTPUT" ;;
+  hf) [[ -f "$OUTPUT/hf-training-binding.json" && -f "$OUTPUT/hf-training-block.json" ]] ;;
+  *) echo 'Training source must be synthetic or hf' >&2; exit 1 ;;
+esac
 PORT=$(node -e 'const server=require("net").createServer();server.listen(0,"127.0.0.1",()=>{console.log(server.address().port);server.close()})')
 [[ "$PORT" =~ ^[0-9]+$ ]]
 NAME="ain-explorer-records-$$-$(date +%s)"

@@ -6,6 +6,16 @@ core and ain-js, then reads actual Next-rendered pages. No React, Next router,
 RPC response or blockchain write is mocked. It is not GPU training, inference
 load testing, a 70-job concurrency test or a public website deployment.
 
+The optional `AINSCAN_TRAINING_SOURCE=hf` mode instead consumes the actual
+`hf-training-binding.json` and `hf-training-block.json` produced by ainize-node's
+`run-hf-training-chain.sh` integration. It does not create synthetic lesson
+replacements. It checks the binding's chain identity, READY status, dataset ID
+and SHA-256, model/backend and block identity before checking the rendered pages.
+The transaction detail must display that canonical dataset fingerprint, READY
+and stub backend in addition to its measured latency and execution/finalization.
+The inference batch and setup transactions remain synthetic integration data.
+An invalid or missing HF artifact fails rather than falling back to fixtures.
+
 ## Prepare the explorer build
 
 Use clean AINSCAN source with installed dependencies and its existing constrained
@@ -129,3 +139,34 @@ The production build and verifier TypeScript check passed. The build retained
 the existing Browserslist and KnowledgeGraph hook warnings. The temporary build,
 explorer and blockchain containers and private chain network were removed.
 No public server was deployed and no npm package was published by this run.
+
+## Actual HF import displayed, 2026-09-14
+
+The optional HF mode passed all seven HTTP/SSR route checks using AINSCAN source
+`7c40ae3`, build `oEhap0hdJErgigG__fIg2`, and an actual eight-row HF import through
+the CLI and temporary node. Its stub-trained READY transaction
+`0x511f8d60f511007316ad4197b058faa63c7bf109c00a57d4f528100d72e441d2`
+was successful and finalized in block **89**. The dedicated Transaction Details
+fields matched all eight expected values: job, dataset, dataset SHA-256, status,
+backend, model label, native path and **415 ms** submission-to-inclusion latency.
+Assertions match the rendered `dt`/`dd` fields, not merely text in the raw
+Operation JSON or serialized React scripts. Knowledge and ordinary transaction
+and block pages also contained this actual job's identifiers.
+
+Selected results, binding/block evidence, Docker limits and the transaction and
+Knowledge HTML are retained in `test/evidence/hf-cli-ainscan-20260914/`. The full
+seven page responses remain in the execution output directory. The source data
+was fetched from the real immutable HF revision; training remained explicitly
+stub and the inference batch remained synthetic. The displayed model label is
+not proof that those model weights were loaded. No real GPU, inference quality,
+70-job latency average or 100-dataset completion is claimed.
+
+The first attempt failed because the field extractor included the adjacent
+Copy button's text in the dataset fingerprint. It was corrected to exclude
+button elements without stripping legitimate occurrences of "Copy" in values.
+Four parser fixtures and three copyable fields from retained actual HTML passed;
+the fresh full run then passed. HTML is now retained before field assertions so
+future failures preserve the exact response for diagnosis. Strict TypeScript,
+shell syntax and whitespace checks passed. All temporary controller, chain and
+explorer containers and the private network were removed. No public deployment
+or npm publication occurred.

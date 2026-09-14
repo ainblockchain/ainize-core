@@ -1,0 +1,99 @@
+{
+  "scope": "Actual HF import through CLI and node, stub-trained READY record and production Next server on isolated chain; inference batch is synthetic, no real training/inference performance or public deployment claim",
+  "trainingSource": "hf-cli-stub",
+  "hfDetailFields": {
+    "Training Job": "003f3e8a-5be6-43aa-8b4c-0e75b164e0a5",
+    "Dataset": "21ee4b4b-ddb4-4e9a-a4c0-39e21b04763f",
+    "Dataset SHA-256": "405249ef16b48a3754b481092a968d004996acafd9c60f72fd06b655fe80f8c4",
+    "Training Status": "READY",
+    "Training Backend": "stub",
+    "Model ID (trainer-reported)": "Qwen3.8-Flash-Next",
+    "Record Path": "/apps/knowledge/market/lessons/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/003f3e8a-5be6-43aa-8b4c-0e75b164e0a5",
+    "Training Record Latency": "415 ms"
+  },
+  "buildId": "oEhap0hdJErgigG__fIg2",
+  "genesisHash": "0x596e941f1e662150244ec8b6390a6b58fa0bbc5a39d9b0a7d430c1f405d2c1bc",
+  "publisher": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+  "trainingTransaction": "0x511f8d60f511007316ad4197b058faa63c7bf109c00a57d4f528100d72e441d2",
+  "inferenceTransaction": "0x63d3ebd38856a2ba94fc907ccdeb7229eb5a809578ff41ba3b1adb1219e60826",
+  "latencyMs": 415,
+  "checked": [
+    {
+      "route": "/knowledge?publisher=0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+      "expected": [
+        "Training Records",
+        "Inference",
+        "21ee4b4b-ddb4-4e9a-a4c0-39e21b04763f",
+        "Qwen3.8-Flash-Next",
+        "fixture/model",
+        "Auto-refresh (15s)"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions",
+      "expected": [
+        "Native Records",
+        "0x511f8d60f511007316ad4197b058faa63c7bf109c00a57d4f528100d72e441d2",
+        "0x63d3ebd38856a2ba94fc907ccdeb7229eb5a809578ff41ba3b1adb1219e60826",
+        "Training writes",
+        "Inference batches"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/blocks/89",
+      "expected": [
+        "Native Records",
+        "0x511f8d60f511007316ad4197b058faa63c7bf109c00a57d4f528100d72e441d2",
+        "21ee4b4b-ddb4-4e9a-a4c0-39e21b04763f",
+        "SET_VALUE"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions/0x511f8d60f511007316ad4197b058faa63c7bf109c00a57d4f528100d72e441d2",
+      "expected": [
+        "Training Record Latency",
+        "415 ms",
+        "Succeeded",
+        "Finalized",
+        "21ee4b4b-ddb4-4e9a-a4c0-39e21b04763f",
+        "Qwen3.8-Flash-Next"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions/0x63d3ebd38856a2ba94fc907ccdeb7229eb5a809578ff41ba3b1adb1219e60826",
+      "expected": [
+        "Inference Model (reported)",
+        "fixture/model",
+        "Inference Requests / Second (reported)",
+        "Receipt Commitment (unverified)",
+        "Succeeded",
+        "Finalized"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions/0x3e5d3996b44fe31db37cb01458ab3a4cb12010ed105e7f570039b7a1f2998574",
+      "expected": [
+        "Execution Receipt",
+        "Succeeded",
+        "Finalized",
+        "result_list"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions/0x457f37bf98380681152098b0a96c50b86b6807857d5835e30c8bbfc0e99b766b",
+      "expected": [
+        "Execution Receipt",
+        "Succeeded",
+        "Finalized",
+        "result_list"
+      ],
+      "status": 200
+    }
+  ]
+}

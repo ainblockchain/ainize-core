@@ -5,7 +5,19 @@ import { join } from 'node:path';
 const directory = process.argv[2];
 const endpoint = new URL(process.env.AINSCAN_TEST_URL!);
 assert.equal(endpoint.hostname, '127.0.0.1');
-const training = JSON.parse(readFileSync(join(directory, 'training-state.json'), 'utf8'));
+const hf = process.env.AINSCAN_TRAINING_SOURCE === 'hf';
+const binding = hf ? JSON.parse(readFileSync(join(directory, 'hf-training-binding.json'), 'utf8')) : null;
+const hfBlock = hf ? JSON.parse(readFileSync(join(directory, 'hf-training-block.json'), 'utf8')) : null;
+if (hf) {
+  assert.equal(binding.bindingVerified, true);
+  assert.equal(binding.backendReported, 'stub');
+  assert.equal(binding.integrationVerified, false);
+  assert.equal(hfBlock.block.hash, binding.blockHash);
+  assert.equal(hfBlock.block.number, binding.blockNumber);
+}
+const training = hf ? { publisher: binding.publisher,
+  transactions: [{ tx_hash: binding.txHash, info: hfBlock.transaction, block: hfBlock.block }] }
+  : JSON.parse(readFileSync(join(directory, 'training-state.json'), 'utf8'));
 const inference = JSON.parse(readFileSync(join(directory, 'evidence.json'), 'utf8'));
 const writes = JSON.parse(readFileSync(join(directory, 'evidence.json.writes.json'), 'utf8'));
 const multiOperationSetup = writes.setupConfirmations.filter((entry: { receipt?: { result_list?: unknown } }) => entry.receipt?.result_list);
@@ -25,6 +37,7 @@ assert.equal(directResponse.status, 200);
 const directBody = await directResponse.json();
 const expectedGenesis = directBody.result?.result ?? directBody.result;
 assert.match(expectedGenesis?.hash, /^0x[a-f0-9]{64}$/i);
+if (hf) assert.equal(expectedGenesis.hash, binding.genesisHash);
 let ready = false;
 const deadline = Date.now() + 45000;
 while (Date.now() < deadline) {
@@ -47,6 +60,14 @@ const lesson = training.transactions[0];
 assert.equal(lesson.info.is_finalized, true);
 assert.equal(lesson.info.receipt.code, 0);
 const operation = lesson.block.transactions.find((entry: { hash: string }) => entry.hash === lesson.tx_hash).tx_body.operation;
+if (hf) {
+  assert.equal(operation.ref, binding.path);
+  assert.equal(operation.value.status, 'READY');
+  assert.equal(operation.value.dataset_id, binding.datasetId);
+  assert.equal(operation.value.dataset_sha256, binding.datasetSha256);
+  assert.equal(operation.value.model_id, binding.modelIdReported);
+  assert.equal(operation.value.backend, binding.backendReported);
+}
 const latency = lesson.block.timestamp - operation.value.submitted_at;
 assert.ok(Number.isSafeInteger(latency) && latency >= 0);
 const routes = [
@@ -61,18 +82,34 @@ const routes = [
     expected: ['Execution Receipt', 'Succeeded', 'Finalized', 'result_list'],
   })),
 ];
+const hfDetailFields: Record<string, string> = hf ? {
+  'Training Job': binding.jobId, Dataset: binding.datasetId, 'Dataset SHA-256': binding.datasetSha256,
+  'Training Status': 'READY', 'Training Backend': 'stub', 'Model ID (trainer-reported)': binding.modelIdReported,
+  'Record Path': binding.path, 'Training Record Latency': `${latency.toLocaleString('en-US')} ms`,
+} : {};
 const checked = [];
 for (const route of routes) {
   const response = await fetch(new URL(route.path, endpoint), { signal: AbortSignal.timeout(30000) });
   assert.equal(response.status, 200, route.name);
   const html = await response.text();
+  writeFileSync(join(directory, `explorer-${route.name}.html`), html, { flag: 'wx', mode: 0o600 });
   const rendered = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
   for (const expected of route.expected) assert.ok(rendered.includes(expected), `${route.name}: missing ${expected}`);
+  if (hf && route.name === 'transaction') {
+    const fields = new Map<string, string>();
+    for (const pair of rendered.matchAll(/<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/g)) {
+      fields.set(pair[1].replace(/<[^>]*>/g, '').trim(), pair[2].replace(/<button\b[^>]*>[\s\S]*?<\/button>/g, '').replace(/<[^>]*>/g, '').trim());
+    }
+    for (const [label, expected] of Object.entries(hfDetailFields)) assert.equal(fields.get(label), expected, `Native detail field ${label}`);
+  }
   assert.ok(!html.includes('href="/experiments'), 'No experiments navigation');
-  writeFileSync(join(directory, `explorer-${route.name}.html`), html, { flag: 'wx', mode: 0o600 });
   checked.push({ route: route.path, expected: route.expected, status: response.status });
 }
-const result = { scope: 'Actual production Next server and isolated chain with synthetic records; no workload performance or public deployment claim',
+const result = { scope: hf
+  ? 'Actual HF import through CLI and node, stub-trained READY record and production Next server on isolated chain; inference batch is synthetic, no real training/inference performance or public deployment claim'
+  : 'Actual production Next server and isolated chain with synthetic records; no workload performance or public deployment claim',
+  trainingSource: hf ? 'hf-cli-stub' : 'synthetic',
+  hfDetailFields,
   buildId: process.env.AINSCAN_TEST_BUILD_ID, genesisHash: expectedGenesis.hash, publisher: training.publisher,
   trainingTransaction: lesson.tx_hash, inferenceTransaction: inference.submitted.tx_hash, latencyMs: latency, checked };
 writeFileSync(join(directory, 'explorer-records.json'), JSON.stringify(result, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
