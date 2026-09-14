@@ -65,6 +65,10 @@ request bodies, keys, signatures, raw error messages and transport configuration
 An absent numeric code is unknown, not success; a response hash is not finality.
 Transport exceptions without a numeric blockchain code are recorded as `null`.
 This diagnostic observes each submission once and never retries writes.
+It also retains `setupConfirmations`: actual finalized setup transaction hashes,
+block numbers, execution/finalization flags and compact chain receipts. These
+include multi-operation `result_list` receipts for validating explorer readers,
+without retaining setup request bodies or private keys.
 
 An EXIT/INT/TERM cleanup removes the temporary container and its network, including
 after assertion failure or the verifier's 180-second timeout. No EC2 instances,

@@ -27,6 +27,7 @@ while (!(await ainReachable(provider))) {
 const identity = identityFromPrivateKey(LOCAL_GENESIS.privateKey);
 const ledger = new AinLedger({ providerUrl: provider, chainId: 0 }, identity);
 const writeResponses: Record<string, unknown>[] = [];
+const setupConfirmations: Record<string, unknown>[] = [];
 let settingUp = false;
 const send = ledger.ain.provider.send.bind(ledger.ain.provider);
 ledger.ain.provider.send = async (method: string, params: unknown) => {
@@ -51,6 +52,8 @@ ledger.ain.provider.send = async (method: string, params: unknown) => {
             assert.ok(receipt && (receipt.code === undefined || receipt.code === 0));
             const operations = receipt.result_list ? Object.values(receipt.result_list) : [receipt];
             assert.ok(operations.length > 0 && operations.every(result => (result as { code?: unknown })?.code === 0));
+            setupConfirmations.push({ tx_hash: response.tx_hash, block_number: transaction.number,
+              is_executed: transaction.is_executed, is_finalized: transaction.is_finalized, receipt });
             confirmed = true;
             break;
           }
@@ -108,6 +111,6 @@ try {
   console.log(JSON.stringify({ path: submitted.path, transaction: submitted.tx_hash, block: block.number, overwriteRejected: true }));
 } finally {
   try {
-    writeFileSync(`${process.argv[2]}.writes.json`, JSON.stringify({ writeResponses }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    writeFileSync(`${process.argv[2]}.writes.json`, JSON.stringify({ writeResponses, setupConfirmations }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   } finally { await ledger.close(); }
 }
