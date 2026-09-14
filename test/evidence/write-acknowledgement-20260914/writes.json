@@ -1,0 +1,29 @@
+{
+  "writeResponses": [
+    {
+      "outcome": "response",
+      "code": 0,
+      "tx_hash": "0xcd01645bfb6b29430e4da0a063777179c493892e7cae9ef595386f826f7dc1b3"
+    },
+    {
+      "outcome": "response",
+      "code": null,
+      "tx_hash": "0xba6b9635a58b3777598c3909685ec15385e42ec1defc3b2e819533aac134b4a4"
+    },
+    {
+      "outcome": "response",
+      "code": null,
+      "tx_hash": "0x162a47a24e56cb2981ec98b21cb50147c47f82deede3569e0216fdbed4f9af6f"
+    },
+    {
+      "outcome": "response",
+      "code": 0,
+      "tx_hash": "0x0fda9c2d768bfa0450213f709785178406988c95f2e66cc91b3e73f88df28f56"
+    },
+    {
+      "outcome": "response",
+      "code": 0,
+      "tx_hash": "0xb966241731995759b58b0121dab4176f3fe02835ec6c34b385c088bd1bf4cb23"
+    }
+  ]
+}

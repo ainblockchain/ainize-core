@@ -56,6 +56,12 @@ finds the hash in a full block, compares the exact operation and current state,
 and requires an attempted overwrite to fail with chain rule error **12103**.
 `evidence.json` preserves the block, transaction, rule, synthetic receipt and
 rejection response. `docker.json` captures the actual image and resource settings.
+`evidence.json.writes.json` records SDK submission response codes and transaction
+hashes, including when an assertion fails after setup. It deliberately excludes
+request bodies, keys, signatures, raw error messages and transport configuration.
+An absent numeric code is unknown, not success; a response hash is not finality.
+Transport exceptions without a numeric blockchain code are recorded as `null`.
+This diagnostic observes each submission once and never retries writes.
 
 An EXIT/INT/TERM cleanup removes the temporary container and its network, including
 after assertion failure or the verifier's 180-second timeout. No EC2 instances,

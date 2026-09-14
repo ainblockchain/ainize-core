@@ -1,0 +1,26 @@
+{
+  "scope": "Actual isolated-chain transaction read by current AINSCAN parsers; synthetic receipt, not performance or public UI evidence",
+  "transaction": "0xb966241731995759b58b0121dab4176f3fe02835ec6c34b385c088bd1bf4cb23",
+  "block": 9,
+  "overview": {
+    "records": [
+      {
+        "path": "/apps/knowledge/market/inference_batches/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/ad30bbdc4b322d55bdbc0d2dce01f58e4d5ab573637f7652353c762079936a9e",
+        "nodeId": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+        "modelId": "fixture/model",
+        "requestCount": 1,
+        "startedAt": 1789359134964,
+        "finishedAt": 1789359135964,
+        "receiptRoot": "6711f8cad8ccd29eb7d223454a24af15d044fa46ccab0e48ca71dfe18b2e04d5",
+        "requestsPerSecond": 1
+      }
+    ],
+    "skipped": 0,
+    "truncated": false,
+    "models": 1
+  },
+  "execution": {
+    "status": "Succeeded",
+    "finalization": "Finalized"
+  }
+}

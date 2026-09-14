@@ -26,6 +26,23 @@ while (!(await ainReachable(provider))) {
 }
 const identity = identityFromPrivateKey(LOCAL_GENESIS.privateKey);
 const ledger = new AinLedger({ providerUrl: provider, chainId: 0 }, identity);
+const writeResponses: Record<string, unknown>[] = [];
+const send = ledger.ain.provider.send.bind(ledger.ain.provider);
+ledger.ain.provider.send = async (method: string, params: unknown) => {
+  if (method !== 'ain_sendSignedTransaction') return send(method, params);
+  try {
+    const response = await send(method, params);
+    writeResponses.push({ outcome: 'response', code: response?.result?.code ?? response?.code ?? null,
+      operation_codes: Object.values(response?.result?.result_list ?? {}).slice(0, 1000)
+        .map(entry => typeof (entry as { code?: unknown })?.code === 'number' ? (entry as { code: number }).code : null),
+      tx_hash: response?.tx_hash ?? null });
+    return response;
+  } catch (error) {
+    const code = (error as { code?: unknown })?.code;
+    writeResponses.push({ outcome: 'error', code: typeof code === 'number' ? code : null });
+    throw error;
+  }
+};
 const Ain = createRequire(import.meta.url)('@ainblockchain/ain-js').default;
 const sdk = new Ain(provider, null, 0);
 sdk.wallet.addAndSetDefaultAccount(LOCAL_GENESIS.privateKey);
@@ -72,4 +89,8 @@ try {
     image: process.env.AIN_INFERENCE_TEST_IMAGE, resources: { cpus: 2, memoryBytes: 4294967296, network: 'internal' },
     rulePath, rule, submitted, transaction, block, receipts, overwrite, overwriteRejected: true }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   console.log(JSON.stringify({ path: submitted.path, transaction: submitted.tx_hash, block: block.number, overwriteRejected: true }));
-} finally { await ledger.close(); }
+} finally {
+  try {
+    writeFileSync(`${process.argv[2]}.writes.json`, JSON.stringify({ writeResponses }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+  } finally { await ledger.close(); }
+}

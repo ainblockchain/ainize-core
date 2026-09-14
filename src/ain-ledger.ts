@@ -322,12 +322,30 @@ export class AinLedger implements Ledger {
   }
 
   private static assertOk(res: any, what: string): string {
-    const code = res?.result?.code ?? res?.result?.result_list?.['0']?.code;
-    if (res?.result?.message && code !== 0 && code !== undefined) {
-      throw new Error(`AIN write rejected (${what}): ${res.result.message}`);
+    if (typeof res?.tx_hash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(res.tx_hash)) {
+      throw new Error(`AIN write acknowledgement missing a valid transaction hash (${what})`);
     }
-    if (res?.result?.code && res.result.code !== 0) throw new Error(`AIN write rejected (${what}): code ${res.result.code}`);
-    return res?.tx_hash ?? '';
+    const pending = [res.result];
+    let inspected = 0;
+    while (pending.length) {
+      const result = pending.pop();
+      if (++inspected > 1000 || !result || typeof result !== 'object' || Array.isArray(result)) {
+        throw new Error(`AIN write acknowledgement has an invalid result (${what})`);
+      }
+      if (result.code !== undefined && result.code !== 0) {
+        throw new Error(`AIN write rejected (${what}): code ${result.code}`);
+      }
+      if (result.result_list !== undefined) {
+        const list = result.result_list;
+        if (!list || typeof list !== 'object' || Array.isArray(list)) throw new Error(`AIN write acknowledgement has an invalid result list (${what})`);
+        const entries = Object.values(list);
+        if (!entries.length || inspected + pending.length + entries.length > 1000) throw new Error(`AIN write acknowledgement has an invalid result list (${what})`);
+        pending.push(...entries);
+      } else if (result.code !== 0) {
+        throw new Error(`AIN write acknowledgement missing a result code (${what})`);
+      }
+    }
+    return res.tx_hash;
   }
 
   async getValue(ref: string): Promise<any> {

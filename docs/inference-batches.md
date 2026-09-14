@@ -31,6 +31,13 @@ or finality. A failed chain call returns `null`, which can also represent an
 uncertain network outcome. Inspect the transaction and path before retrying; the
 write-once rule rejects a second accepted write to the same path.
 
+Submission acknowledgement requires a 32-byte hexadecimal transaction hash and
+numeric success code `0`. Multi-operation results must contain a nonempty result
+list with successful entries throughout (at most 1,000 inspected result objects).
+Missing/malformed responses and failed later operations are not acknowledged as
+successful writes. This validation also applies to native lesson records; it does
+not replace AINSCAN's independent block inclusion and execution checks.
+
 Reported requests per second is `request_count * 1000 / (finished_at - started_at)`.
 It is not onchain TPS. Do not sum rates from overlapping intervals or equate server
 completion with a client having received the entire stream. A commitment alone
