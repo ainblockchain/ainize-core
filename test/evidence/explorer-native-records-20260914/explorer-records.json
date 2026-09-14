@@ -1,0 +1,56 @@
+{
+  "scope": "Actual production Next server and isolated chain with synthetic records; no workload performance or public deployment claim",
+  "buildId": "0rYJk5jvtMTuxrGwM5YoF",
+  "genesisHash": "0x596e941f1e662150244ec8b6390a6b58fa0bbc5a39d9b0a7d430c1f405d2c1bc",
+  "publisher": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+  "trainingTransaction": "0x15b69d9d9422ae7f910ec647340342dee00314f1ab22d0101fd6730db4bc06d2",
+  "inferenceTransaction": "0x8017f18a41967adf6c08a771ed1d1e6e9656783a7a925d25217469f5460d59f6",
+  "latencyMs": 317,
+  "checked": [
+    {
+      "route": "/knowledge?publisher=0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+      "expected": [
+        "Training Records",
+        "Inference",
+        "fixture-dataset-0",
+        "fixture/model-0",
+        "fixture/model",
+        "Auto-refresh (15s)"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions",
+      "expected": [
+        "Native Records",
+        "0x15b69d9d9422ae7f910ec647340342dee00314f1ab22d0101fd6730db4bc06d2",
+        "0x8017f18a41967adf6c08a771ed1d1e6e9656783a7a925d25217469f5460d59f6",
+        "Training writes",
+        "Inference batches"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/blocks/22",
+      "expected": [
+        "Native Records",
+        "0x15b69d9d9422ae7f910ec647340342dee00314f1ab22d0101fd6730db4bc06d2",
+        "fixture-dataset-0",
+        "SET_VALUE"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions/0x15b69d9d9422ae7f910ec647340342dee00314f1ab22d0101fd6730db4bc06d2",
+      "expected": [
+        "Training Record Latency",
+        "317 ms",
+        "Succeeded",
+        "Finalized",
+        "fixture-dataset-0",
+        "fixture/model-0"
+      ],
+      "status": 200
+    }
+  ]
+}

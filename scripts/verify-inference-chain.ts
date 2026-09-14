@@ -27,6 +27,7 @@ while (!(await ainReachable(provider))) {
 const identity = identityFromPrivateKey(LOCAL_GENESIS.privateKey);
 const ledger = new AinLedger({ providerUrl: provider, chainId: 0 }, identity);
 const writeResponses: Record<string, unknown>[] = [];
+let settingUp = false;
 const send = ledger.ain.provider.send.bind(ledger.ain.provider);
 ledger.ain.provider.send = async (method: string, params: unknown) => {
   if (method !== 'ain_sendSignedTransaction') return send(method, params);
@@ -36,6 +37,28 @@ ledger.ain.provider.send = async (method: string, params: unknown) => {
       operation_codes: Object.values(response?.result?.result_list ?? {}).slice(0, 1000)
         .map(entry => typeof (entry as { code?: unknown })?.code === 'number' ? (entry as { code: number }).code : null),
       tx_hash: response?.tx_hash ?? null });
+    if (settingUp && /^0x[a-f0-9]{64}$/i.test(response?.tx_hash ?? '')) {
+      const results = response?.result?.result_list ? Object.values(response.result.result_list) : [response?.result];
+      if ((response?.result?.code === undefined || response.result.code === 0)
+        && results.length && results.every(result => (result as { code?: unknown })?.code === 0)) {
+        const setupDeadline = Date.now() + 45000;
+        let confirmed = false;
+        while (Date.now() < setupDeadline) {
+          const transaction = await rpc('ain_getTransactionByHash', { hash: response.tx_hash });
+          if (transaction?.is_finalized === true) {
+            assert.equal(transaction.is_executed, true);
+            const receipt = transaction.receipt;
+            assert.ok(receipt && (receipt.code === undefined || receipt.code === 0));
+            const operations = receipt.result_list ? Object.values(receipt.result_list) : [receipt];
+            assert.ok(operations.length > 0 && operations.every(result => (result as { code?: unknown })?.code === 0));
+            confirmed = true;
+            break;
+          }
+          await pause();
+        }
+        assert.ok(confirmed, 'Setup transaction must finalize before the next fixture write');
+      }
+    }
     return response;
   } catch (error) {
     const code = (error as { code?: unknown })?.code;
@@ -47,14 +70,8 @@ const Ain = createRequire(import.meta.url)('@ainblockchain/ain-js').default;
 const sdk = new Ain(provider, null, 0);
 sdk.wallet.addAndSetDefaultAccount(LOCAL_GENESIS.privateKey);
 try {
-  const beforeSetup = await rpc('ain_getLastBlockNumber');
-  assert.ok(Number.isSafeInteger(beforeSetup) && beforeSetup >= 0);
-  await ledger.setupApp({ stake: 100 });
-  const setupDeadline = Date.now() + 30000;
-  while (await rpc('ain_getLastBlockNumber') < beforeSetup + 2) {
-    if (Date.now() > setupDeadline) throw new Error('Chain did not advance after application setup');
-    await pause();
-  }
+  settingUp = true;
+  try { await ledger.setupApp({ stake: 100 }); } finally { settingUp = false; }
   const rulePath = '/apps/knowledge/market/inference_batches/$node/$batch';
   const expectedRule = AinLedger.marketRules().find(([path]) => path === rulePath)![1];
   const rule = await rpc('ain_get', { type: 'GET_RULE', ref: rulePath });

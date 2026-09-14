@@ -49,9 +49,12 @@ Only the public development genesis key is used; never fund or reuse it on a
 public chain. Transaction signature verification remains enabled. The development
 gas-fee workaround is enabled; this test establishes no production fee estimate.
 
-The verifier waits for SERVING and for blocks to advance after application setup
-so setup transactions do not fill the development account's free transaction
-pool. It checks the installed rule, submits through `AinLedger.noteInferenceBatch`,
+The verifier waits for SERVING and serializes accepted application-setup writes
+by waiting for each transaction's successful finalization before returning its
+SDK response. This fixture-only gate prevents setup transactions from filling
+the development account's free transaction pool; it does not serialize workload
+writes, raise pool limits, change production SDK behavior or retry submissions.
+It checks the installed rule, submits through `AinLedger.noteInferenceBatch`,
 finds the hash in a full block, compares the exact operation and current state,
 and requires an attempted overwrite to fail with chain rule error **12103**.
 `evidence.json` preserves the block, transaction, rule, synthetic receipt and

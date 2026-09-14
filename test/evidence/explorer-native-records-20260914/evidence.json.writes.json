@@ -1,0 +1,61 @@
+{
+  "writeResponses": [
+    {
+      "outcome": "response",
+      "code": 0,
+      "operation_codes": [],
+      "tx_hash": "0xa883d45bc7a355a81f149b010eac23a9bab57e9f21b588ddcb07fb712b4255e3"
+    },
+    {
+      "outcome": "response",
+      "code": null,
+      "operation_codes": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "tx_hash": "0xdf2d9f98009f63f22c3e65fd31da0a45ce3eaedb03d4e3917e718669cc7ad0ca"
+    },
+    {
+      "outcome": "response",
+      "code": null,
+      "operation_codes": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "tx_hash": "0x83c4e84a2d31bb54b9ab43ccb7eb4da33c547a8cfdfecdd1ffe5097f70851f07"
+    },
+    {
+      "outcome": "response",
+      "code": 0,
+      "operation_codes": [],
+      "tx_hash": "0x5ad414506a0431fe9b1551ea1c24cc1cb11f2f0c7bf48727d768922863d39386"
+    },
+    {
+      "outcome": "response",
+      "code": 0,
+      "operation_codes": [],
+      "tx_hash": "0x8017f18a41967adf6c08a771ed1d1e6e9656783a7a925d25217469f5460d59f6"
+    }
+  ]
+}

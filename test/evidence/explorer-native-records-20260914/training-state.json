@@ -1,0 +1,583 @@
+{
+  "scope": "Real isolated chain with synthetic lessons; not training or concurrency proof",
+  "publisher": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+  "publishers": {
+    "0x00ADEc28B6a845a085e03591bE7550dd68673C1C": {
+      "#state_ph": "0xff72ab5928dba5efb76de2241f379e2d29aced1329780630b7be6c92c7490c5d"
+    }
+  },
+  "state": {
+    "fixture-job-0": {
+      "status": "TRAINING",
+      "dataset_id": "fixture-dataset-0",
+      "model_id": "fixture/model-0",
+      "rows": 1,
+      "submitted_at": 1789360799511,
+      "node": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+      "job": "fixture-job-0",
+      "updated_at": 1789360799511
+    },
+    "fixture-job-1": {
+      "status": "TRAINING",
+      "dataset_id": "fixture-dataset-1",
+      "model_id": "fixture/model-1",
+      "rows": 1,
+      "submitted_at": 1789360802617,
+      "node": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+      "job": "fixture-job-1",
+      "updated_at": 1789360802617
+    },
+    "fixture-job-2": {
+      "status": "READY",
+      "dataset_id": "fixture-dataset-0",
+      "model_id": "fixture/model-0",
+      "rows": 1,
+      "submitted_at": 1789360809343,
+      "node": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+      "job": "fixture-job-2",
+      "updated_at": 1789360809343
+    }
+  },
+  "transactions": [
+    {
+      "path": "/apps/knowledge/market/lessons/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/fixture-job-0",
+      "tx_hash": "0x15b69d9d9422ae7f910ec647340342dee00314f1ab22d0101fd6730db4bc06d2",
+      "info": {
+        "state": "FINALIZED",
+        "number": 22,
+        "index": 0,
+        "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+        "timestamp": 1789360799511,
+        "is_executed": true,
+        "is_finalized": true,
+        "tracked_at": 1789360801819,
+        "executed_at": 1789360799562,
+        "finalized_at": 1789360801819,
+        "exec_result": {
+          "gas_amount_total": {
+            "bandwidth": {
+              "service": 0,
+              "app": {
+                "knowledge": 1
+              }
+            },
+            "state": {
+              "service": 0,
+              "app": {
+                "knowledge": 2212
+              }
+            }
+          },
+          "gas_cost_total": 0,
+          "code": 0,
+          "bandwidth_gas_amount": 1,
+          "gas_amount_charged": 0
+        },
+        "transaction": {
+          "tx_body": {
+            "operation": {
+              "type": "SET_VALUE",
+              "ref": "/apps/knowledge/market/lessons/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/fixture-job-0",
+              "value": {
+                "status": "TRAINING",
+                "dataset_id": "fixture-dataset-0",
+                "model_id": "fixture/model-0",
+                "rows": 1,
+                "submitted_at": 1789360799511,
+                "node": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                "job": "fixture-job-0",
+                "updated_at": 1789360799511
+              },
+              "is_global": false
+            },
+            "nonce": -1,
+            "timestamp": 1789360799511,
+            "gas_price": 0
+          },
+          "signature": "0x15b69d9d9422ae7f910ec647340342dee00314f1ab22d0101fd6730db4bc06d2f847a1900e613a19ed874d1d4333e4debc2dbc63095b9c60ebbb8fe729af705518ce13e83e6e7279c70bbaf3922f2b7ec1ab9de8ee5574fa7f65066ab5dfffb41c",
+          "hash": "0x15b69d9d9422ae7f910ec647340342dee00314f1ab22d0101fd6730db4bc06d2",
+          "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+        },
+        "receipt": {
+          "code": 0,
+          "gas_amount_charged": 0,
+          "gas_cost_total": 0
+        }
+      },
+      "block": {
+        "last_votes": [
+          {
+            "tx_body": {
+              "operation": {
+                "type": "SET",
+                "op_list": [
+                  {
+                    "type": "SET_VALUE",
+                    "ref": "/consensus/number/21/propose",
+                    "value": {
+                      "number": 21,
+                      "epoch": 148365598,
+                      "validators": {
+                        "0x00ADEc28B6a845a085e03591bE7550dd68673C1C": {
+                          "stake": 10000000,
+                          "proposal_right": true
+                        }
+                      },
+                      "total_at_stake": 10000000,
+                      "proposer": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                      "block_hash": "0xd6e2753c6772017accc15da031239151af2deec845e989c6df5bb887b6bfdb98",
+                      "last_hash": "0x362998683c11f148d62b3f0ab63e76f5d0d558c78a497124e70c4812372fc679",
+                      "timestamp": 1789360798800,
+                      "gas_cost_total": 0
+                    }
+                  }
+                ]
+              },
+              "nonce": -1,
+              "gas_price": 0,
+              "timestamp": 1789360798828
+            },
+            "signature": "0xe896e9784882b14a3d426438a6d00029fe381c19f3227ddc462e39424c3e274324ba8f3490e6838d022fa1b6a14be52bf945cad15611d0bdc4bc986dcbd39073187973e83b99a68b2cf9b25dda06f2db8efcbe77bac77bdf557fea5885aef5e21c",
+            "hash": "0xe896e9784882b14a3d426438a6d00029fe381c19f3227ddc462e39424c3e2743",
+            "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+          },
+          {
+            "tx_body": {
+              "operation": {
+                "type": "SET_VALUE",
+                "ref": "/consensus/number/21/0xd6e2753c6772017accc15da031239151af2deec845e989c6df5bb887b6bfdb98/vote/0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                "value": {
+                  "block_hash": "0xd6e2753c6772017accc15da031239151af2deec845e989c6df5bb887b6bfdb98",
+                  "stake": 10000000,
+                  "is_against": false,
+                  "vote_nonce": 1789360798854
+                }
+              },
+              "nonce": -1,
+              "gas_price": 0,
+              "timestamp": 1789360798854
+            },
+            "signature": "0xf39e104990b1190939835776909b28dcf908c054f3ab8b3fe2eb1a19099ddf44a3a15cd63eaa86aaa681f03c9944c031fd4a5ef3235e80ab8527c8f8cbdcbd514129d0e8f3a5f4b0898818277734d688303b66c14925431d1a80d30aae1e67b11c",
+            "hash": "0xf39e104990b1190939835776909b28dcf908c054f3ab8b3fe2eb1a19099ddf44",
+            "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+          }
+        ],
+        "evidence": {},
+        "transactions": [
+          {
+            "tx_body": {
+              "operation": {
+                "type": "SET_VALUE",
+                "ref": "/apps/knowledge/market/lessons/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/fixture-job-0",
+                "value": {
+                  "status": "TRAINING",
+                  "dataset_id": "fixture-dataset-0",
+                  "model_id": "fixture/model-0",
+                  "rows": 1,
+                  "submitted_at": 1789360799511,
+                  "node": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                  "job": "fixture-job-0",
+                  "updated_at": 1789360799511
+                },
+                "is_global": false
+              },
+              "nonce": -1,
+              "timestamp": 1789360799511,
+              "gas_price": 0
+            },
+            "signature": "0x15b69d9d9422ae7f910ec647340342dee00314f1ab22d0101fd6730db4bc06d2f847a1900e613a19ed874d1d4333e4debc2dbc63095b9c60ebbb8fe729af705518ce13e83e6e7279c70bbaf3922f2b7ec1ab9de8ee5574fa7f65066ab5dfffb41c",
+            "hash": "0x15b69d9d9422ae7f910ec647340342dee00314f1ab22d0101fd6730db4bc06d2",
+            "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+          }
+        ],
+        "receipts": [
+          {
+            "code": 0,
+            "gas_amount_charged": 0,
+            "gas_cost_total": 0
+          }
+        ],
+        "last_hash": "0xd6e2753c6772017accc15da031239151af2deec845e989c6df5bb887b6bfdb98",
+        "last_votes_hash": "0x804b7e139f0d64affbc25dea0c02fa2a0d68501debabde5b00ac2e7ae827a164",
+        "evidence_hash": "0xd35126dcb36a3c4b4ef04c4eff63edecbc9eacff867d1c348c1abaf82567a8f8",
+        "transactions_hash": "0x6b0d2ea65e2adb4bf52ee523ac0215d70724d2dc2094b9003e29717cadd7ce85",
+        "receipts_hash": "0x944121fc0a272ecdeda0ae1c1203291f9c1e211b52b744f476c854358f91f2fc",
+        "number": 22,
+        "epoch": 148365599,
+        "timestamp": 1789360799828,
+        "state_proof_hash": "0xfc3bf37d493d6dd852ea7ce62a3bd6d14ae391d99733eaa2093fd495a4d60c91",
+        "proposer": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+        "validators": {
+          "0x00ADEc28B6a845a085e03591bE7550dd68673C1C": {
+            "stake": 10000000,
+            "proposal_right": true
+          }
+        },
+        "gas_amount_total": 0,
+        "gas_cost_total": 0,
+        "hash": "0x9c9da67dc4c848067ab8da3d34b345cdf8faf85767273db44211593be3617d33",
+        "size": 5692
+      }
+    },
+    {
+      "path": "/apps/knowledge/market/lessons/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/fixture-job-1",
+      "tx_hash": "0xea31df9f72a8982f21c52c77cfb4edde99e6a54ccbcc8fbd85adae0227a28bb7",
+      "info": {
+        "state": "FINALIZED",
+        "number": 25,
+        "index": 0,
+        "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+        "timestamp": 1789360802618,
+        "is_executed": true,
+        "is_finalized": true,
+        "tracked_at": 1789360807604,
+        "executed_at": 1789360802638,
+        "finalized_at": 1789360807604,
+        "exec_result": {
+          "gas_amount_total": {
+            "bandwidth": {
+              "service": 0,
+              "app": {
+                "knowledge": 1
+              }
+            },
+            "state": {
+              "service": 0,
+              "app": {
+                "knowledge": 1794
+              }
+            }
+          },
+          "gas_cost_total": 0,
+          "code": 0,
+          "bandwidth_gas_amount": 1,
+          "gas_amount_charged": 0
+        },
+        "transaction": {
+          "tx_body": {
+            "operation": {
+              "type": "SET_VALUE",
+              "ref": "/apps/knowledge/market/lessons/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/fixture-job-1",
+              "value": {
+                "status": "TRAINING",
+                "dataset_id": "fixture-dataset-1",
+                "model_id": "fixture/model-1",
+                "rows": 1,
+                "submitted_at": 1789360802617,
+                "node": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                "job": "fixture-job-1",
+                "updated_at": 1789360802617
+              },
+              "is_global": false
+            },
+            "nonce": -1,
+            "timestamp": 1789360802618,
+            "gas_price": 0
+          },
+          "signature": "0xea31df9f72a8982f21c52c77cfb4edde99e6a54ccbcc8fbd85adae0227a28bb71e917d763379b2f0bc624b882e7b8bfabcc3b1695bb2b9d4d08e66cf81b026120c3fbacda8b982d7225db66accd29133a3ddee4e85ac6e0c8abd43e5791f29921b",
+          "hash": "0xea31df9f72a8982f21c52c77cfb4edde99e6a54ccbcc8fbd85adae0227a28bb7",
+          "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+        },
+        "receipt": {
+          "code": 0,
+          "gas_amount_charged": 0,
+          "gas_cost_total": 0
+        }
+      },
+      "block": {
+        "last_votes": [
+          {
+            "tx_body": {
+              "operation": {
+                "type": "SET",
+                "op_list": [
+                  {
+                    "type": "SET_VALUE",
+                    "ref": "/consensus/number/24/propose",
+                    "value": {
+                      "number": 24,
+                      "epoch": 148365601,
+                      "validators": {
+                        "0x00ADEc28B6a845a085e03591bE7550dd68673C1C": {
+                          "stake": 10000000,
+                          "proposal_right": true
+                        }
+                      },
+                      "total_at_stake": 10000000,
+                      "proposer": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                      "block_hash": "0xf1d02c5acf816f0260abe6420475f839285c76c416991690b749c9d7b6a4c34f",
+                      "last_hash": "0xe9b25ce987c5b97e256de69826147bde20fca50c7a840e9a5b94f7a21a001131",
+                      "timestamp": 1789360801820,
+                      "gas_cost_total": 0
+                    }
+                  }
+                ]
+              },
+              "nonce": -1,
+              "gas_price": 0,
+              "timestamp": 1789360801828
+            },
+            "signature": "0x2694eb6d5c5dc54e2343224cd27aecc25a0ce5843e08dc5ef53699d3ea8f8d142a9d17f104926add6bfaf0bcddaf3fcd023b787fcad6c33ed5d3289e110e9ea70fcb6c464fec9adf60eb73f44ca825b895fa7c45b3506c6ba26a175a7228c43b1b",
+            "hash": "0x2694eb6d5c5dc54e2343224cd27aecc25a0ce5843e08dc5ef53699d3ea8f8d14",
+            "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+          },
+          {
+            "tx_body": {
+              "operation": {
+                "type": "SET_VALUE",
+                "ref": "/consensus/number/24/0xf1d02c5acf816f0260abe6420475f839285c76c416991690b749c9d7b6a4c34f/vote/0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                "value": {
+                  "block_hash": "0xf1d02c5acf816f0260abe6420475f839285c76c416991690b749c9d7b6a4c34f",
+                  "stake": 10000000,
+                  "is_against": false,
+                  "vote_nonce": 1789360801863
+                }
+              },
+              "nonce": -1,
+              "gas_price": 0,
+              "timestamp": 1789360801863
+            },
+            "signature": "0x0a304922170259403d49ae9ddc4a827e3e811e75f5d590ec6b34daa4f1510a80385406c09bc58fa7a8a999a4f2cce895e7abe68ad4a9c72cfe7c710941f656f8239504a944c1df0390f8dc1ae7e9e8cdc3e821ff1e9d3304e9ba08e39e64d5d41c",
+            "hash": "0x0a304922170259403d49ae9ddc4a827e3e811e75f5d590ec6b34daa4f1510a80",
+            "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+          }
+        ],
+        "evidence": {},
+        "transactions": [
+          {
+            "tx_body": {
+              "operation": {
+                "type": "SET_VALUE",
+                "ref": "/apps/knowledge/market/lessons/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/fixture-job-1",
+                "value": {
+                  "status": "TRAINING",
+                  "dataset_id": "fixture-dataset-1",
+                  "model_id": "fixture/model-1",
+                  "rows": 1,
+                  "submitted_at": 1789360802617,
+                  "node": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                  "job": "fixture-job-1",
+                  "updated_at": 1789360802617
+                },
+                "is_global": false
+              },
+              "nonce": -1,
+              "timestamp": 1789360802618,
+              "gas_price": 0
+            },
+            "signature": "0xea31df9f72a8982f21c52c77cfb4edde99e6a54ccbcc8fbd85adae0227a28bb71e917d763379b2f0bc624b882e7b8bfabcc3b1695bb2b9d4d08e66cf81b026120c3fbacda8b982d7225db66accd29133a3ddee4e85ac6e0c8abd43e5791f29921b",
+            "hash": "0xea31df9f72a8982f21c52c77cfb4edde99e6a54ccbcc8fbd85adae0227a28bb7",
+            "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+          }
+        ],
+        "receipts": [
+          {
+            "code": 0,
+            "gas_amount_charged": 0,
+            "gas_cost_total": 0
+          }
+        ],
+        "last_hash": "0xf1d02c5acf816f0260abe6420475f839285c76c416991690b749c9d7b6a4c34f",
+        "last_votes_hash": "0x6457b8ffaac37af00b7b289ca2fc8cb27c00c3a3bac7027553b83d7c434e4636",
+        "evidence_hash": "0xd35126dcb36a3c4b4ef04c4eff63edecbc9eacff867d1c348c1abaf82567a8f8",
+        "transactions_hash": "0x1c0567a268c9adbd5aff86feb4e6d06074df5c8fb95fc3bfe808f0d91613e19f",
+        "receipts_hash": "0x944121fc0a272ecdeda0ae1c1203291f9c1e211b52b744f476c854358f91f2fc",
+        "number": 25,
+        "epoch": 148365602,
+        "timestamp": 1789360802822,
+        "state_proof_hash": "0xcb30019ee8e8ed3a786ae4c42354f53c8d518962fc705267d9b9ea6515d180f0",
+        "proposer": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+        "validators": {
+          "0x00ADEc28B6a845a085e03591bE7550dd68673C1C": {
+            "stake": 10000000,
+            "proposal_right": true
+          }
+        },
+        "gas_amount_total": 0,
+        "gas_cost_total": 0,
+        "hash": "0x3676c9c52bb7b2f823cfa8f25229925d90bb23f137ac5f9c83ce0c709157cfa4",
+        "size": 5692
+      }
+    },
+    {
+      "path": "/apps/knowledge/market/lessons/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/fixture-job-2",
+      "tx_hash": "0xf66526c9efef0f4c9ee20ea9b00558aae0471d63c2de92cd806ee8ee2a786dfa",
+      "info": {
+        "state": "FINALIZED",
+        "number": 31,
+        "index": 0,
+        "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+        "timestamp": 1789360809344,
+        "is_executed": true,
+        "is_finalized": true,
+        "tracked_at": 1789360811688,
+        "executed_at": 1789360809349,
+        "finalized_at": 1789360811688,
+        "exec_result": {
+          "gas_amount_total": {
+            "bandwidth": {
+              "service": 0,
+              "app": {
+                "knowledge": 1
+              }
+            },
+            "state": {
+              "service": 0,
+              "app": {
+                "knowledge": 1788
+              }
+            }
+          },
+          "gas_cost_total": 0,
+          "code": 0,
+          "bandwidth_gas_amount": 1,
+          "gas_amount_charged": 0
+        },
+        "transaction": {
+          "tx_body": {
+            "operation": {
+              "type": "SET_VALUE",
+              "ref": "/apps/knowledge/market/lessons/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/fixture-job-2",
+              "value": {
+                "status": "READY",
+                "dataset_id": "fixture-dataset-0",
+                "model_id": "fixture/model-0",
+                "rows": 1,
+                "submitted_at": 1789360809343,
+                "node": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                "job": "fixture-job-2",
+                "updated_at": 1789360809343
+              },
+              "is_global": false
+            },
+            "nonce": -1,
+            "timestamp": 1789360809344,
+            "gas_price": 0
+          },
+          "signature": "0xf66526c9efef0f4c9ee20ea9b00558aae0471d63c2de92cd806ee8ee2a786dfa6e0d7a2eaf9dcc39f491cf8b10673c4a3acd360ba86f56846a806fda524998a10d34e8b019341b51042a360e56a678d8b65191a1dc592bd19b8c73ec1ccf03a21c",
+          "hash": "0xf66526c9efef0f4c9ee20ea9b00558aae0471d63c2de92cd806ee8ee2a786dfa",
+          "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+        },
+        "receipt": {
+          "code": 0,
+          "gas_amount_charged": 0,
+          "gas_cost_total": 0
+        }
+      },
+      "block": {
+        "last_votes": [
+          {
+            "tx_body": {
+              "operation": {
+                "type": "SET",
+                "op_list": [
+                  {
+                    "type": "SET_VALUE",
+                    "ref": "/consensus/number/30/propose",
+                    "value": {
+                      "number": 30,
+                      "epoch": 148365608,
+                      "validators": {
+                        "0x00ADEc28B6a845a085e03591bE7550dd68673C1C": {
+                          "stake": 10000000,
+                          "proposal_right": true
+                        }
+                      },
+                      "total_at_stake": 10000000,
+                      "proposer": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                      "block_hash": "0xebbf7784fa8cd706109f7f7f792d061c22dc689c1db405a0402cbb4e447d64b1",
+                      "last_hash": "0x23851f572ab67a787c28a4241c5ba639df2d29c4932e45413abb7472a3ea51eb",
+                      "timestamp": 1789360808680,
+                      "gas_cost_total": 0
+                    }
+                  }
+                ]
+              },
+              "nonce": -1,
+              "gas_price": 0,
+              "timestamp": 1789360808838
+            },
+            "signature": "0x0a3388fb3affabf12286385559bf7bd5cc48c71c2b3cf83bfa66322a98957b554a173f5190aa8112844160ccf0ee21fa757876c55d8c945212c20215deda0ff8781587a805add2814319442f8e8fa67f59786fe7d2ab3c6c90ff55cb0636c5ec1c",
+            "hash": "0x0a3388fb3affabf12286385559bf7bd5cc48c71c2b3cf83bfa66322a98957b55",
+            "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+          },
+          {
+            "tx_body": {
+              "operation": {
+                "type": "SET_VALUE",
+                "ref": "/consensus/number/30/0xebbf7784fa8cd706109f7f7f792d061c22dc689c1db405a0402cbb4e447d64b1/vote/0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                "value": {
+                  "block_hash": "0xebbf7784fa8cd706109f7f7f792d061c22dc689c1db405a0402cbb4e447d64b1",
+                  "stake": 10000000,
+                  "is_against": false,
+                  "vote_nonce": 1789360809332
+                }
+              },
+              "nonce": -1,
+              "gas_price": 0,
+              "timestamp": 1789360809332
+            },
+            "signature": "0x4b13614865456bbcf2c41ab90be129ad201cba1a25a8f60779a04ae27cf26141576cb819968141c96d74122931ad5f240395ea05e92ccfb9dadddf07272e4ea12546f2ac1c95d8ca2d25caf719b0f7f5517ab8cd348be9e103a817f34126dff21c",
+            "hash": "0x4b13614865456bbcf2c41ab90be129ad201cba1a25a8f60779a04ae27cf26141",
+            "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+          }
+        ],
+        "evidence": {},
+        "transactions": [
+          {
+            "tx_body": {
+              "operation": {
+                "type": "SET_VALUE",
+                "ref": "/apps/knowledge/market/lessons/0x00ADEc28B6a845a085e03591bE7550dd68673C1C/fixture-job-2",
+                "value": {
+                  "status": "READY",
+                  "dataset_id": "fixture-dataset-0",
+                  "model_id": "fixture/model-0",
+                  "rows": 1,
+                  "submitted_at": 1789360809343,
+                  "node": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+                  "job": "fixture-job-2",
+                  "updated_at": 1789360809343
+                },
+                "is_global": false
+              },
+              "nonce": -1,
+              "timestamp": 1789360809344,
+              "gas_price": 0
+            },
+            "signature": "0xf66526c9efef0f4c9ee20ea9b00558aae0471d63c2de92cd806ee8ee2a786dfa6e0d7a2eaf9dcc39f491cf8b10673c4a3acd360ba86f56846a806fda524998a10d34e8b019341b51042a360e56a678d8b65191a1dc592bd19b8c73ec1ccf03a21c",
+            "hash": "0xf66526c9efef0f4c9ee20ea9b00558aae0471d63c2de92cd806ee8ee2a786dfa",
+            "address": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C"
+          }
+        ],
+        "receipts": [
+          {
+            "code": 0,
+            "gas_amount_charged": 0,
+            "gas_cost_total": 0
+          }
+        ],
+        "last_hash": "0xebbf7784fa8cd706109f7f7f792d061c22dc689c1db405a0402cbb4e447d64b1",
+        "last_votes_hash": "0xb71d6d229306b449dad1e9f8cdc4c07203083b340a48bf64aa8b60df89b8110c",
+        "evidence_hash": "0xd35126dcb36a3c4b4ef04c4eff63edecbc9eacff867d1c348c1abaf82567a8f8",
+        "transactions_hash": "0xac34180bc2818e82f2997ef47ed9cb7b05f0e060469ef254d247b3f5186e00d8",
+        "receipts_hash": "0x944121fc0a272ecdeda0ae1c1203291f9c1e211b52b744f476c854358f91f2fc",
+        "number": 31,
+        "epoch": 148365609,
+        "timestamp": 1789360809682,
+        "state_proof_hash": "0x8362f483c172a7b6b687c096ccf57e5602e92772b0d1dae48c9584d001ec57e5",
+        "proposer": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+        "validators": {
+          "0x00ADEc28B6a845a085e03591bE7550dd68673C1C": {
+            "stake": 10000000,
+            "proposal_right": true
+          }
+        },
+        "gas_amount_total": 0,
+        "gas_cost_total": 0,
+        "hash": "0xc75ce2fca63d00ca346817eb5a584da9d4e1a31ee8640695e5d925c19794d064",
+        "size": 5686
+      }
+    }
+  ]
+}

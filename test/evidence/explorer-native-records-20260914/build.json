@@ -1,0 +1,15 @@
+{
+  "sourceCommit": "5471d377241bc82f18c06823bfd4244b20652f21",
+  "buildId": "0rYJk5jvtMTuxrGwM5YoF",
+  "result": {
+    "exitCode": 0
+  },
+  "resources": {
+    "image": "sha256:52e634617c0fad0207eeba4262ecdf142fc886649253ac42e4730ce75bd04dd5",
+    "cpuNano": 2000000000,
+    "memoryBytes": 4294967296,
+    "memorySwapBytes": 4294967296,
+    "pidsLimit": 256,
+    "network": "bridge"
+  }
+}
