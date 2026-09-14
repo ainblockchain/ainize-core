@@ -272,6 +272,7 @@ export class AinLedger implements Ledger {
    * a path nothing is at.
    */
   async noteLesson(jobId: string, value: Record<string, unknown>): Promise<{ path: string; tx_hash: string } | null> {
+    if (typeof jobId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(jobId)) throw new Error('Invalid lesson job ID');
     const path = `${MARKET}/lessons/${this.identity.address}/${jobId}`;
     try {
       const tx_hash = await this.set(path, { ...value, node: this.identity.address, job: jobId, updated_at: Date.now() });
@@ -481,6 +482,7 @@ export class AinLedger implements Ledger {
       [`${MARKET}/challenges/$patch_id/$challenger`, 'auth.addr === $challenger'],
       [`${MARKET}/branches/$branch`, "auth.addr === newData.owner && (data === null || data.owner === auth.addr)"],
       [`${MARKET}/nodes/$addr`, 'auth.addr === $addr'],
+      [`${MARKET}/lessons/$node/$job`, 'auth.addr === $node && util.isDict(newData) && newData.node === $node && newData.job === $job'],
       // A supersede said `auth.addr !== ''` — any address at all could mark ANYBODY's anchor superseded, and the
       // record then sat on the permanent public record where every node applied it. The writer goes in the path,
       // the way `retires` and `disputes` already do it, so the rule engine can name them; readers then check that
