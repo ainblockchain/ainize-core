@@ -1,0 +1,88 @@
+{
+  "scope": "Actual production Next server and isolated chain with synthetic records; no workload performance or public deployment claim",
+  "buildId": "oEhap0hdJErgigG__fIg2",
+  "genesisHash": "0x596e941f1e662150244ec8b6390a6b58fa0bbc5a39d9b0a7d430c1f405d2c1bc",
+  "publisher": "0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+  "trainingTransaction": "0x5efa9d9843192578c41ca2a4d397719fe4460f39268e443550a3c470939e5e0a",
+  "inferenceTransaction": "0xee0aad26da8ec0007bf164e490201269b920c6262ec4f67ce5b0e1c3ba5d7d90",
+  "latencyMs": 873,
+  "checked": [
+    {
+      "route": "/knowledge?publisher=0x00ADEc28B6a845a085e03591bE7550dd68673C1C",
+      "expected": [
+        "Training Records",
+        "Inference",
+        "fixture-dataset-0",
+        "fixture/model-0",
+        "fixture/model",
+        "Auto-refresh (15s)"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions",
+      "expected": [
+        "Native Records",
+        "0x5efa9d9843192578c41ca2a4d397719fe4460f39268e443550a3c470939e5e0a",
+        "0xee0aad26da8ec0007bf164e490201269b920c6262ec4f67ce5b0e1c3ba5d7d90",
+        "Training writes",
+        "Inference batches"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/blocks/29",
+      "expected": [
+        "Native Records",
+        "0x5efa9d9843192578c41ca2a4d397719fe4460f39268e443550a3c470939e5e0a",
+        "fixture-dataset-0",
+        "SET_VALUE"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions/0x5efa9d9843192578c41ca2a4d397719fe4460f39268e443550a3c470939e5e0a",
+      "expected": [
+        "Training Record Latency",
+        "873 ms",
+        "Succeeded",
+        "Finalized",
+        "fixture-dataset-0",
+        "fixture/model-0"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions/0xee0aad26da8ec0007bf164e490201269b920c6262ec4f67ce5b0e1c3ba5d7d90",
+      "expected": [
+        "Inference Model (reported)",
+        "fixture/model",
+        "Inference Requests / Second (reported)",
+        "Receipt Commitment (unverified)",
+        "Succeeded",
+        "Finalized"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions/0x6c59b8ec9392b0b72dbe4a163237c1aa6093f60307abbab7cc249585d1ca94c6",
+      "expected": [
+        "Execution Receipt",
+        "Succeeded",
+        "Finalized",
+        "result_list"
+      ],
+      "status": 200
+    },
+    {
+      "route": "/transactions/0x786fa69614eb80362271596eb0d0782b1890a60e9d97b14b79ebc1f9d7c83cfe",
+      "expected": [
+        "Execution Receipt",
+        "Succeeded",
+        "Finalized",
+        "result_list"
+      ],
+      "status": 200
+    }
+  ]
+}

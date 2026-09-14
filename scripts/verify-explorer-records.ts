@@ -7,6 +7,14 @@ const endpoint = new URL(process.env.AINSCAN_TEST_URL!);
 assert.equal(endpoint.hostname, '127.0.0.1');
 const training = JSON.parse(readFileSync(join(directory, 'training-state.json'), 'utf8'));
 const inference = JSON.parse(readFileSync(join(directory, 'evidence.json'), 'utf8'));
+const writes = JSON.parse(readFileSync(join(directory, 'evidence.json.writes.json'), 'utf8'));
+const multiOperationSetup = writes.setupConfirmations.filter((entry: { receipt?: { result_list?: unknown } }) => entry.receipt?.result_list);
+assert.ok(multiOperationSetup.length >= 2, 'Fixture must retain actual multi-operation setup receipts');
+for (const entry of multiOperationSetup) {
+  assert.equal(entry.is_executed, true);
+  assert.equal(entry.is_finalized, true);
+  assert.ok(Object.values(entry.receipt.result_list).every(value => (value as { code: number }).code === 0));
+}
 const pause = () => new Promise(resolve => setTimeout(resolve, 1000));
 const provider = new URL(process.env.AIN_INFERENCE_TEST_URL!);
 assert.match(provider.hostname, /^(127\.0\.0\.1|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+)$/);
@@ -47,6 +55,11 @@ const routes = [
   { name: 'transactions', path: '/transactions', expected: ['Native Records', lesson.tx_hash, inference.submitted.tx_hash, 'Training writes', 'Inference batches'] },
   { name: 'block', path: `/blocks/${lesson.block.number}`, expected: ['Native Records', lesson.tx_hash, operation.value.dataset_id, 'SET_VALUE'] },
   { name: 'transaction', path: `/transactions/${lesson.tx_hash}`, expected: ['Training Record Latency', `${latency.toLocaleString('en-US')} ms`, 'Succeeded', 'Finalized', operation.value.dataset_id, operation.value.model_id] },
+  { name: 'inference-transaction', path: `/transactions/${inference.submitted.tx_hash}`, expected: ['Inference Model (reported)', 'fixture/model', 'Inference Requests / Second (reported)', 'Receipt Commitment (unverified)', 'Succeeded', 'Finalized'] },
+  ...multiOperationSetup.map((entry: { tx_hash: string }, index: number) => ({
+    name: `multi-operation-${index}`, path: `/transactions/${entry.tx_hash}`,
+    expected: ['Execution Receipt', 'Succeeded', 'Finalized', 'result_list'],
+  })),
 ];
 const checked = [];
 for (const route of routes) {

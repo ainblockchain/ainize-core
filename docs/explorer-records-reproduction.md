@@ -57,6 +57,11 @@ inside the fresh private chain; never reuse or fund it on a public network.
   script elements first, so values hidden only in a serialized React payload do
   not count as rendered fields. Transaction detail must display Succeeded,
   Finalized and the exact reported-submission-to-block latency.
+- The inference transaction detail must display its reported model and rate,
+  unverified receipt commitment, successful execution and finalization. At least
+  two actual finalized multi-operation setup receipts must also display
+  Succeeded and Finalized in their own transaction detail pages. These routes
+  use the retained setup transaction hashes, not hand-constructed receipt data.
 - `explorer-records.json` identifies the build, genesis, hashes, expected fields
   and checked routes. `explorer-*.html` preserves complete rendered responses;
   `explorer-docker.json` and `explorer-server.log` capture the temporary server.
@@ -95,3 +100,32 @@ check passed. All temporary explorer/chain containers and networks were removed.
 The core suite also passed 80 tests with 1 skipped and 0 failures.
 The 317 ms value describes one synthetic lesson record, not the required average
 of 70 real training jobs and not a performance-target pass.
+
+## Expanded verification, 2026-09-14
+
+The expanded verifier passed **seven actual production-server route checks**
+using AINSCAN source `7c40ae3` and build `oEhap0hdJErgigG__fIg2`.
+This build includes the multi-operation receipt reader and transaction-bearing
+block pagination fix. This run checks receipt rendering, not pagination across
+70 real blocks or browser auto-refresh behavior.
+
+Training transaction
+`0x5efa9d9843192578c41ca2a4d397719fe4460f39268e443550a3c470939e5e0a`
+was finalized in block 29. Its displayed **873 ms** matched the actual block
+timestamp minus the synthetic lesson's reported submission timestamp. Inference
+transaction
+`0xee0aad26da8ec0007bf164e490201269b920c6262ec4f67ce5b0e1c3ba5d7d90`
+displayed its reported model, rate and unverified receipt commitment, plus
+Succeeded and Finalized. Both retained multi-operation setup transactions also
+displayed Succeeded and Finalized, using real per-operation receipts.
+
+`test/evidence/explorer-multi-receipts-20260914/` contains the build identity,
+Docker limits, checked routes, chain records, setup receipts and the three new
+transaction-detail HTML responses. The full seven HTML responses remain in the
+local execution output directory. These are synthetic native records on a real
+isolated chain, not GPU workload results or a 70-job latency average.
+
+The production build and verifier TypeScript check passed. The build retained
+the existing Browserslist and KnowledgeGraph hook warnings. The temporary build,
+explorer and blockchain containers and private chain network were removed.
+No public server was deployed and no npm package was published by this run.

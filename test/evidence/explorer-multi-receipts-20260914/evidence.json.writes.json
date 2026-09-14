@@ -1,0 +1,184 @@
+{
+  "writeResponses": [
+    {
+      "outcome": "response",
+      "code": 0,
+      "operation_codes": [],
+      "tx_hash": "0x8ec9e0cd99469c13cbae7c27a789c91975dd1e39a3652ee0ddd75fae3dd894ad"
+    },
+    {
+      "outcome": "response",
+      "code": null,
+      "operation_codes": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "tx_hash": "0x6c59b8ec9392b0b72dbe4a163237c1aa6093f60307abbab7cc249585d1ca94c6"
+    },
+    {
+      "outcome": "response",
+      "code": null,
+      "operation_codes": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "tx_hash": "0x786fa69614eb80362271596eb0d0782b1890a60e9d97b14b79ebc1f9d7c83cfe"
+    },
+    {
+      "outcome": "response",
+      "code": 0,
+      "operation_codes": [],
+      "tx_hash": "0x3b1138ff4fba67b03c2c6b795c2e370f260a6dff15a9033bb4d71f4b1e0793b3"
+    },
+    {
+      "outcome": "response",
+      "code": 0,
+      "operation_codes": [],
+      "tx_hash": "0xee0aad26da8ec0007bf164e490201269b920c6262ec4f67ce5b0e1c3ba5d7d90"
+    }
+  ],
+  "setupConfirmations": [
+    {
+      "tx_hash": "0x8ec9e0cd99469c13cbae7c27a789c91975dd1e39a3652ee0ddd75fae3dd894ad",
+      "block_number": 6,
+      "is_executed": true,
+      "is_finalized": true,
+      "receipt": {
+        "code": 0,
+        "gas_amount_charged": 3546,
+        "gas_cost_total": 0
+      }
+    },
+    {
+      "tx_hash": "0x6c59b8ec9392b0b72dbe4a163237c1aa6093f60307abbab7cc249585d1ca94c6",
+      "block_number": 10,
+      "is_executed": true,
+      "is_finalized": true,
+      "receipt": {
+        "gas_amount_charged": 8,
+        "gas_cost_total": 0,
+        "result_list": {
+          "0": {
+            "code": 0
+          },
+          "1": {
+            "code": 0
+          },
+          "2": {
+            "code": 0
+          },
+          "3": {
+            "code": 0
+          },
+          "4": {
+            "code": 0
+          },
+          "5": {
+            "code": 0
+          },
+          "6": {
+            "code": 0
+          },
+          "7": {
+            "code": 0
+          },
+          "8": {
+            "code": 0
+          }
+        }
+      }
+    },
+    {
+      "tx_hash": "0x786fa69614eb80362271596eb0d0782b1890a60e9d97b14b79ebc1f9d7c83cfe",
+      "block_number": 15,
+      "is_executed": true,
+      "is_finalized": true,
+      "receipt": {
+        "gas_amount_charged": 0,
+        "gas_cost_total": 0,
+        "result_list": {
+          "0": {
+            "code": 0
+          },
+          "1": {
+            "code": 0
+          },
+          "2": {
+            "code": 0
+          },
+          "3": {
+            "code": 0
+          },
+          "4": {
+            "code": 0
+          },
+          "5": {
+            "code": 0
+          },
+          "6": {
+            "code": 0
+          },
+          "7": {
+            "code": 0
+          },
+          "8": {
+            "code": 0
+          },
+          "9": {
+            "code": 0
+          },
+          "10": {
+            "code": 0
+          },
+          "11": {
+            "code": 0
+          },
+          "12": {
+            "code": 0
+          },
+          "13": {
+            "code": 0
+          },
+          "14": {
+            "code": 0
+          },
+          "15": {
+            "code": 0
+          }
+        }
+      }
+    },
+    {
+      "tx_hash": "0x3b1138ff4fba67b03c2c6b795c2e370f260a6dff15a9033bb4d71f4b1e0793b3",
+      "block_number": 18,
+      "is_executed": true,
+      "is_finalized": true,
+      "receipt": {
+        "code": 0,
+        "gas_amount_charged": 4963,
+        "gas_cost_total": 0
+      }
+    }
+  ]
+}
