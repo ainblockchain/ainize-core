@@ -219,6 +219,24 @@ export const nodeConfigSchema = z.object({
     upstream: url,
     enabled: z.boolean().optional(),
   })).optional(),
+  /**
+   * This node's place in the agent mesh (sam.ts) — SAM's contract for agent-to-agent calls between nodes.
+   *
+   * `labels` is what this node declares about itself, e.g. `{ region: 'kr' }`. A label is only a CLAIM until
+   * somebody a caller trusts signs it, which is what `labelAuthorities` names on the caller's side: addresses
+   * whose signature over a label set this node believes. Left empty, any call that requires labels is refused
+   * — the fail-closed default is deliberate, and `trustSelfAttestedLabels` is the (discouraged) way out.
+   *
+   * `egressRequireLabels` is the operator's floor: EVERY pair must be attested by the provider before a
+   * request body leaves this node, whatever the caller asked for.
+   */
+  sam: z.object({
+    enabled: z.boolean().optional(),
+    labels: z.record(z.string(), z.string()).optional(),
+    labelAuthorities: z.array(z.string()).optional(),
+    trustSelfAttestedLabels: z.boolean().optional(),
+    egressRequireLabels: z.record(z.string(), z.string()).optional(),
+  }).optional(),
   /** What this node accepts from peer exchange (items 136/137). */
   p2p: z.object({
     acceptExchange: z.boolean().optional(),
