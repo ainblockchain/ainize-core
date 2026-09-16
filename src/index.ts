@@ -15,6 +15,7 @@ export * from './bytes.js';
 export * from './teach-auth.js';
 export * from './scheme.js';
 export * from './bond.js';
+export * from './agent.js';
 export * from './delegation.js';
 export * from './ops.js';
 export * from './inference-record.js';

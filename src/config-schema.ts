@@ -202,6 +202,23 @@ export const nodeConfigSchema = z.object({
     /** how many addresses this node will hand starting credit to before it stops issuing (item 364) */
     creditGrants: positive.optional(),
   }),
+  /**
+   * A2A agents this node gives a public address to (NEWS-AGENT-REQUIREMENTS §5).
+   *
+   * Each runs as its own process — its own dependencies, its own failure modes, its own GPU appetite — and
+   * the node proxies to it. `id` is the URL segment (`/agents/<id>`) and the identity an operator copies;
+   * `upstream` is where the process actually listens and is never published.
+   *
+   * `enabled: false` keeps the declaration and removes the public address, which is what you want while an
+   * agent is being worked on: a half-built agent with a live URL is worse than no URL.
+   */
+  agents: z.array(z.object({
+    id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/, 'must be lowercase letters, digits and dashes'),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    upstream: url,
+    enabled: z.boolean().optional(),
+  })).optional(),
   /** What this node accepts from peer exchange (items 136/137). */
   p2p: z.object({
     acceptExchange: z.boolean().optional(),
