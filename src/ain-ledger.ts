@@ -66,6 +66,8 @@ export interface AinLedgerOptions {
   chainId: number;
   appName?: string;          // ain-js hard-codes '/apps/knowledge'
   gasPrice?: number;
+  /** How often to re-read the whole market subtree, in ms. Default 8000; see NodeConfig.ledger.ain.pollMs. */
+  pollMs?: number;
 }
 
 const APP = '/apps/knowledge';
@@ -235,7 +237,7 @@ export class AinLedger implements Ledger {
     private readonly opts: AinLedgerOptions,
     private readonly identity: Identity,
     private readonly events: LedgerEvents = {},
-    private readonly pollMs = 8000,
+    private readonly pollMs = opts.pollMs ?? 8000,
   ) {
     this.ain = new AinCtor(opts.providerUrl, opts.eventHandlerUrl ?? null, opts.chainId);
     this.ain.wallet.addAndSetDefaultAccount(identity.privateKey);

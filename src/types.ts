@@ -766,6 +766,16 @@ export interface NodeConfig {
       eventHandlerUrl?: string | null;
       chainId: number;
       appName: string;         // 'knowledge' (ain-js default)
+      /**
+       * How often this node re-reads the whole market subtree. Default 8 s.
+       *
+       * The read is the ENTIRE `/apps/knowledge/market` tree, and it grows with every published
+       * knowledge, so its cost is the catalogue size — not the size of what changed. One node at
+       * eight seconds is nothing. Seventy nodes on one chain is seventy full-tree reads every eight
+       * seconds, which is enough to fill a validator's accept queue and stop it answering at all.
+       * A node that only publishes its own work does not need the network's catalogue that fresh.
+       */
+      pollMs?: number;
     };
   };
   identity: {

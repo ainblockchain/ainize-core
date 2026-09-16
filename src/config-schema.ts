@@ -112,6 +112,7 @@ export const nodeConfigSchema = z.object({
       eventHandlerUrl: url.nullable().optional(),
       chainId: nonNegative,
       appName: z.string().min(1, 'must not be empty'),
+      pollMs: z.number().int().min(1000, 'must be at least 1000 ms').max(3600000).optional(),
     }).optional(),
   }),
   identity: z.object({ privateKey: z.string(), address: z.string(), publicKey: z.string() }),
