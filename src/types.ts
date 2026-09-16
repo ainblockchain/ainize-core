@@ -480,6 +480,29 @@ export interface BranchInfo {
   archived?: boolean;
 }
 
+/**
+ * One A2A agent a node operates, as it advertises it to the network.
+ *
+ * Deliberately smaller than the agent card: gossip runs every few seconds between every pair of nodes, so this
+ * carries what a marketplace ROW needs and nothing else. Whoever wants the rest fetches the card from `url`,
+ * which is the owning node's own address — an agent is served by the node that runs it, never relayed.
+ */
+export interface AgentAdvert {
+  id: string;
+  name: string;
+  description?: string;
+  /** The owning node's public A2A address for this agent, e.g. `https://node.example/agents/news`. */
+  url: string;
+  /** Skill NAMES only; the card at `url` carries their descriptions, tags and examples. */
+  skills?: string[];
+  /** Protocol versions the card offers, e.g. `['1.0','0.3']`. */
+  protocols?: string[];
+  /** Extension URIs the card declares — A2UI is the one a marketplace can draw. */
+  extensions?: string[];
+  /** Whether the OWNING node last reached it. A peer cannot check this for itself. */
+  reachable?: boolean;
+}
+
 export interface PeerInfo {
   address: string;            // AIN address = node identity
   public_key?: string;
@@ -505,6 +528,11 @@ export interface PeerInfo {
   build?: string;
   /** `version` of config.json: the schema version it was written by, kept for migrations. */
   config_version?: string;
+  /**
+   * A2A agents this node operates (capped). Absent on nodes older than the field, and on nodes that run none —
+   * the two are indistinguishable here, which is fine: neither has an agent to show.
+   */
+  agents?: AgentAdvert[];
   /**
    * A per-START id, minted when the node process boots (item 139). Two endpoints presenting one ADDRESS is either a
    * node that moved — same instance, new URL — or two nodes running on one identity, which silently breaks every
@@ -679,6 +707,46 @@ export interface RuntimeStatus {
   detail?: string;
 }
 
+/**
+ * One A2A agent this node gives a public address to (`/agents/<id>`).
+ *
+ * The node proxies to `upstream` and rewrites the card's `url` on the way out, so the agent process itself may
+ * listen on localhost and still be reachable by a workspace. Declared here rather than only in `ainize-node`
+ * because a key that exists in one declaration and not the other is stored and then silently ignored — the
+ * agents list was read through a cast for exactly that reason.
+ */
+export interface NodeAgentConfig {
+  /** URL segment and identity: `/agents/<id>`. Lowercase, dashes. */
+  id: string;
+  /** Shown in the operator's list; the card's own `name` is what a workspace displays. */
+  name?: string;
+  /** Where the agent process listens, e.g. `http://127.0.0.1:9200`. */
+  upstream: string;
+  /** Off by default at the node: an agent that is not ready should not have a public address. */
+  enabled?: boolean;
+  description?: string;
+}
+
+/**
+ * SAM (Sovereign Agent Mesh) settings — agent-to-agent calls between nodes.
+ *
+ * A label is a CLAIM until a party the caller trusts signs it, which is the whole distinction the gate turns
+ * on. Left unconfigured, nothing is constrained and nothing is refused; configure `egressRequireLabels` and
+ * this node stops letting request bodies leave for a peer that cannot prove where it is.
+ */
+export interface SamMeshConfig {
+  /** false turns the mesh routes off entirely. Absent means on. */
+  enabled?: boolean;
+  /** What this node declares about itself, e.g. `{ region: 'kr' }`. A claim until an authority signs it. */
+  labels?: Record<string, string>;
+  /** Addresses whose signature over a label set this node believes. Empty: no label requirement can pass. */
+  labelAuthorities?: string[];
+  /** Accept a peer's signature over its OWN labels. Off by default: that is a claim, not an attestation. */
+  trustSelfAttestedLabels?: boolean;
+  /** The operator's floor: EVERY pair must be attested by the provider before a request body leaves. */
+  egressRequireLabels?: Record<string, string>;
+}
+
 export interface NodeConfig {
   name: string;
   dataDir: string;
@@ -687,6 +755,10 @@ export interface NodeConfig {
   publicUrl?: string;
   roles: NodeRole[];
   peers: string[];
+  /** A2A agents this node operates. Absent on a node that runs none. */
+  agents?: NodeAgentConfig[];
+  /** This node's place in the agent mesh (SAM). Absent means unconstrained: the labels gate never runs. */
+  sam?: SamMeshConfig;
   ledger: {
     kind: 'local' | 'ain';
     ain?: {

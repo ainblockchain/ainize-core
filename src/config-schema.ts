@@ -231,10 +231,15 @@ export const nodeConfigSchema = z.object({
    * request body leaves this node, whatever the caller asked for.
    */
   sam: z.object({
+    /** false turns the mesh routes off entirely. Absent means on. */
     enabled: z.boolean().optional(),
+    /** What this node declares about itself, e.g. `{ "region": "kr" }`. A claim until an authority signs it. */
     labels: z.record(z.string(), z.string()).optional(),
+    /** Addresses whose signature over a label set this node believes. Empty: no label requirement can pass. */
     labelAuthorities: z.array(z.string()).optional(),
+    /** Accept a peer's signature over its OWN labels. Off by default: that is a claim, not an attestation. */
     trustSelfAttestedLabels: z.boolean().optional(),
+    /** The operator's floor: EVERY pair must be attested by the provider before a request body leaves. */
     egressRequireLabels: z.record(z.string(), z.string()).optional(),
   }).optional(),
   /** What this node accepts from peer exchange (items 136/137). */
