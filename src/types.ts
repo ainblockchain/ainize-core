@@ -747,6 +747,41 @@ export interface SamMeshConfig {
   egressRequireLabels?: Record<string, string>;
 }
 
+/**
+ * One inference backend of the `/v1` surface.
+ *
+ * `concurrency` is how many requests it runs at once, defaulting to 1. The LLM's is 1 because it sits behind the
+ * shared runtime lease; transcription and image run on their own GPUs and may set their own.
+ */
+export interface NodeBackendConfig {
+  id: string;
+  modality: 'chat' | 'transcription' | 'image';
+  /** Base URL of the upstream OpenAI-shaped server (vLLM, or the image sidecar). */
+  upstream: string;
+  models: string[];
+  concurrency?: number;
+}
+
+/** One chain the deposit watcher reads `Transfer` logs from. */
+export interface NodeDepositChainConfig {
+  chain: string;
+  rpcUrl: string;
+  /** The ERC-20 whose transfers count as a deposit here. */
+  token: string;
+  /** How deep a block must be before its transfers are credited. Defaults per chain. */
+  confirmations?: number;
+  /** True when `token` IS the sAIN vault share — already in share units, so no conversion. */
+  isVaultShare?: boolean;
+}
+
+export interface NodeDepositsConfig {
+  receivingAddress: string;
+  /** The ERC-4626 sAIN vault every deposit is priced through, so deposits on different chains share one unit. */
+  vault: { address: string; chain: string };
+  chains: NodeDepositChainConfig[];
+  pollMs?: number;
+}
+
 export interface NodeConfig {
   name: string;
   dataDir: string;
@@ -805,6 +840,20 @@ export interface NodeConfig {
     /** Sampling + degeneracy guard per generation path (D1). Omit for the measured defaults. */
     sampling?: RuntimeSampling;
   };
+  /**
+   * The inference backends served on the OpenAI-compatible `/v1` surface (chat, transcription, image).
+   *
+   * Declared, not probed: `/v1/models` answers from this list, so the node advertises what an operator
+   * configured rather than whatever container happened to be up. Unset = no `/v1` surface.
+   */
+  backends?: NodeBackendConfig[];
+  /**
+   * Accepting AIN for a share of this node's throughput. Unset = this node sells no throughput.
+   *
+   * The vault and the receiving address have no defaults on purpose: getting either wrong credits share for money
+   * the operator does not hold, and the mistake is invisible at runtime.
+   */
+  deposits?: NodeDepositsConfig;
   verifier?: {
     quorum: number;
     /**

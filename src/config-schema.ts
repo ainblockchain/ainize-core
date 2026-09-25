@@ -156,6 +156,50 @@ export const nodeConfigSchema = z.object({
     gpus: z.string().optional(),
     sampling: z.record(z.string(), z.unknown()).optional(),
   }).optional(),
+  /**
+   * The inference backends this node serves on its OpenAI-compatible `/v1` surface.
+   *
+   * Declared rather than probed: `/v1/models` answers from this list, so a node advertises exactly what an
+   * operator configured instead of whatever container happened to be up when the question was asked. A model id
+   * belongs to one backend — the registry refuses a duplicate at start-up rather than routing by array order.
+   *
+   * `concurrency` is how many requests a backend runs at once. The LLM's is 1: it sits behind the shared runtime
+   * lease. Transcription and image run on their own GPUs and set their own.
+   */
+  backends: z.array(z.object({
+    id: z.string().min(1),
+    modality: z.enum(['chat', 'transcription', 'image']),
+    upstream: url,
+    models: z.array(z.string().min(1)).min(1, 'a backend that serves no model cannot be routed to'),
+    concurrency: positive.optional(),
+  })).optional(),
+  /**
+   * Accepting AIN for a share of this node's throughput.
+   *
+   * Nothing here has a default except the token addresses and the confirmation depths, which are facts rather
+   * than preferences. The vault and the receiving address are required and unset: getting either wrong credits
+   * share for money the operator does not hold, and neither mistake shows up at runtime — a node watching the
+   * wrong address simply never sees a transfer, which looks exactly like nobody having deposited yet.
+   */
+  deposits: z.object({
+    /** The operator address callers send AIN or sAIN to. */
+    receivingAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'must be an EVM address'),
+    /** The ERC-4626 sAIN vault every deposit is priced through, so one unit spans all chains. */
+    vault: z.object({
+      address: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'must be an EVM address'),
+      chain: z.string().min(1),
+    }),
+    chains: z.array(z.object({
+      chain: z.string().min(1),
+      rpcUrl: url,
+      token: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'must be an EVM address'),
+      confirmations: positive.optional(),
+      /** True when `token` IS the vault share, so the amount needs no conversion. */
+      isVaultShare: z.boolean().optional(),
+    })).min(1, 'a node accepting deposits must watch at least one chain'),
+    /** How often to re-read the chains, in ms. Default 30000. */
+    pollMs: positive.optional(),
+  }).optional(),
   verifier: z.object({
     quorum: positive,
     /**
