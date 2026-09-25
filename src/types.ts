@@ -776,7 +776,7 @@ export interface NodeDepositChainConfig {
 
 export interface NodeDepositsConfig {
   receivingAddress: string;
-  /** The ERC-4626 sAIN vault every deposit is priced through, so deposits on different chains share one unit. */
+  /** The AIN staking contract every deposit is priced through, so deposits on different chains share one unit. Not ERC-4626: sAIN has asset() but no convertToShares, and the rate lives on this contract. */
   vault: { address: string; chain: string };
   chains: NodeDepositChainConfig[];
   pollMs?: number;
