@@ -156,6 +156,23 @@ export const nodeConfigSchema = z.object({
     gpus: z.string().optional(),
     sampling: z.record(z.string(), z.unknown()).optional(),
   }).optional(),
+  /**
+   * The inference backends this node serves on its OpenAI-compatible `/v1` surface.
+   *
+   * Declared rather than probed: `/v1/models` answers from this list, so a node advertises exactly what an
+   * operator configured instead of whatever container happened to be up when the question was asked. A model id
+   * belongs to one backend — the registry refuses a duplicate at start-up rather than routing by array order.
+   *
+   * `concurrency` is how many requests a backend runs at once. The LLM's is 1: it sits behind the shared runtime
+   * lease. Transcription and image run on their own GPUs and set their own.
+   */
+  backends: z.array(z.object({
+    id: z.string().min(1),
+    modality: z.enum(['chat', 'transcription', 'image']),
+    upstream: url,
+    models: z.array(z.string().min(1)).min(1, 'a backend that serves no model cannot be routed to'),
+    concurrency: positive.optional(),
+  })).optional(),
   verifier: z.object({
     quorum: positive,
     /**

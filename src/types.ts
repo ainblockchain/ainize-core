@@ -747,6 +747,21 @@ export interface SamMeshConfig {
   egressRequireLabels?: Record<string, string>;
 }
 
+/**
+ * One inference backend of the `/v1` surface.
+ *
+ * `concurrency` is how many requests it runs at once, defaulting to 1. The LLM's is 1 because it sits behind the
+ * shared runtime lease; transcription and image run on their own GPUs and may set their own.
+ */
+export interface NodeBackendConfig {
+  id: string;
+  modality: 'chat' | 'transcription' | 'image';
+  /** Base URL of the upstream OpenAI-shaped server (vLLM, or the image sidecar). */
+  upstream: string;
+  models: string[];
+  concurrency?: number;
+}
+
 export interface NodeConfig {
   name: string;
   dataDir: string;
@@ -805,6 +820,13 @@ export interface NodeConfig {
     /** Sampling + degeneracy guard per generation path (D1). Omit for the measured defaults. */
     sampling?: RuntimeSampling;
   };
+  /**
+   * The inference backends served on the OpenAI-compatible `/v1` surface (chat, transcription, image).
+   *
+   * Declared, not probed: `/v1/models` answers from this list, so the node advertises what an operator
+   * configured rather than whatever container happened to be up. Unset = no `/v1` surface.
+   */
+  backends?: NodeBackendConfig[];
   verifier?: {
     quorum: number;
     /**
