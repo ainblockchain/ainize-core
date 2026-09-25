@@ -17,6 +17,15 @@ import {
 
 const tmp = mkdtempSync(join(tmpdir(), 'ngram-config-test-'));
 
+test('active teach jobs per key keeps the default and allows an explicit parallel workload', () => {
+  assert.equal(teachConfig({ teach: undefined }).activeJobsPerKey, 2);
+  const field = configField('teach.activeJobsPerKey');
+  assert.ok(field);
+  assert.equal(field.parse(70), 70);
+  for (const invalid of [0, -1, 1.5, 1001, '70']) assert.equal(field.safeParse(invalid).success, false);
+  assert.equal(teachConfig({ teach: { activeJobsPerKey: 70 } as TeachConfig }).activeJobsPerKey, 70);
+});
+
 test('a v1 config.json (no dataset / effort / check blocks) loads and gains every v2 default', () => {
   const home = join(tmp, 'v1');
   mkdirSync(home, { recursive: true });
