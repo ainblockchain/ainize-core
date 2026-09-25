@@ -184,7 +184,7 @@ export const nodeConfigSchema = z.object({
   deposits: z.object({
     /** The operator address callers send AIN or sAIN to. */
     receivingAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'must be an EVM address'),
-    /** The ERC-4626 sAIN vault every deposit is priced through, so one unit spans all chains. */
+    /** The AIN staking contract every deposit is priced through, so deposits on different chains share one unit. Not ERC-4626: sAIN has asset() but no convertToShares, and the rate lives on this contract. */
     vault: z.object({
       address: z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'must be an EVM address'),
       chain: z.string().min(1),
