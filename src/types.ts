@@ -762,6 +762,26 @@ export interface NodeBackendConfig {
   concurrency?: number;
 }
 
+/** One chain the deposit watcher reads `Transfer` logs from. */
+export interface NodeDepositChainConfig {
+  chain: string;
+  rpcUrl: string;
+  /** The ERC-20 whose transfers count as a deposit here. */
+  token: string;
+  /** How deep a block must be before its transfers are credited. Defaults per chain. */
+  confirmations?: number;
+  /** True when `token` IS the sAIN vault share — already in share units, so no conversion. */
+  isVaultShare?: boolean;
+}
+
+export interface NodeDepositsConfig {
+  receivingAddress: string;
+  /** The ERC-4626 sAIN vault every deposit is priced through, so deposits on different chains share one unit. */
+  vault: { address: string; chain: string };
+  chains: NodeDepositChainConfig[];
+  pollMs?: number;
+}
+
 export interface NodeConfig {
   name: string;
   dataDir: string;
@@ -827,6 +847,13 @@ export interface NodeConfig {
    * configured rather than whatever container happened to be up. Unset = no `/v1` surface.
    */
   backends?: NodeBackendConfig[];
+  /**
+   * Accepting AIN for a share of this node's throughput. Unset = this node sells no throughput.
+   *
+   * The vault and the receiving address have no defaults on purpose: getting either wrong credits share for money
+   * the operator does not hold, and the mistake is invisible at runtime.
+   */
+  deposits?: NodeDepositsConfig;
   verifier?: {
     quorum: number;
     /**
