@@ -755,7 +755,7 @@ export interface SamMeshConfig {
  */
 export interface NodeBackendConfig {
   id: string;
-  modality: 'chat' | 'transcription' | 'image';
+  modality: 'chat' | 'transcription' | 'image' | 'decision';
   /** Base URL of the upstream OpenAI-shaped server (vLLM, or the image sidecar). */
   upstream: string;
   models: string[];
@@ -999,6 +999,15 @@ export interface TeachConfig {
     minFreeGpuMb: number;
     idleStopMin: number;
     /**
+     * Where the gradient trainer runs: 'docker' (default — `docker exec` into `container`) or 'local' (spawn
+     * `python` as a subprocess on the node host, for a serving user with no docker access).
+     */
+    runtime?: 'docker' | 'local';
+    /** Interpreter for local mode (default 'python3'). */
+    python?: string;
+    /** Working dir for local mode; if unset, the node's `runtime.repo`. */
+    cwd?: string;
+    /**
      * The two knobs that decide peak GPU memory. Unset, both are derived from the question count — and both
      * derivations give the LARGEST value to the LARGEST lesson, which is backwards: they raise the pressure
      * exactly on the runs that take hours to reach the point of failing, and the failure lands at the first
@@ -1023,7 +1032,14 @@ export interface TeachConfig {
      * a 15-minute grace since the beginning; a busy runtime was retried for ever, so a 3 a.m. bake could sit behind
      * verification of its own yesterday's version with a terminal that said nothing. Default 30 min.
      */
-    lockGraceMs: number };
+    lockGraceMs: number;
+    /**
+     * How a trained lesson is verified. `runtime` (default, or unset): apply the npz to the PLE chat runtime and
+     * re-measure the answers. `trainer`: trust the trainer's own per-question evaluation and never touch the runtime —
+     * for a node that serves only `decision` models and has no PLE chat runtime, where the runtime check can never
+     * pass and the lesson would otherwise stall at EXPORTED forever ("model server unavailable").
+     */
+    mode?: 'runtime' | 'trainer' };
   /** Interactive preflight sampling. */
   preflight: { sampleRows: number; perCall: number };
   /** Total questions the queue may hold across all waiting lessons. */

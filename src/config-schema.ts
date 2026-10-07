@@ -53,6 +53,14 @@ const teachSchema = z.object({
     minFreeGpuMb: nonNegative,
     idleStopMin: nonNegative,
     /**
+     * Where the gradient trainer runs. 'docker' (default) execs into `container`; 'local' spawns `python` as a
+     * subprocess on the node host, for a serving user with no docker access. `cwd` is the local working dir
+     * (default: the node's `runtime.repo`); `python` is the interpreter (default 'python3').
+     */
+    runtime: z.enum(['docker', 'local']).optional(),
+    python: z.string().optional(),
+    cwd: z.string().optional(),
+    /**
      * The two knobs that decide peak GPU memory. Unset, each is derived from the question count — and both
      * derivations give the LARGEST value to the LARGEST lesson, which is backwards: memory scales with these,
      * not with the row count, so they raise the pressure exactly on the runs that take hours to reach the point
@@ -87,6 +95,12 @@ const teachSchema = z.object({
     lockTargetMs: positive, lockAbortMs: positive,
     /** how long a lesson waits for a BUSY shared model before it is saved unchecked (item 244) */
     lockGraceMs: positive.optional(),
+    /**
+     * How a trained lesson is verified. `runtime` (default): apply the npz to the PLE chat runtime and re-measure.
+     * `trainer`: trust the trainer's own per-question evaluation — for a node that serves only `decision` models and
+     * has no PLE chat runtime, so the runtime check would never pass and the lesson would stall at EXPORTED.
+     */
+    mode: z.enum(['runtime', 'trainer']).optional(),
   }),
   preflight: z.object({ sampleRows: positive, perCall: positive }),
   queuedRowsMax: positive,
@@ -168,7 +182,7 @@ export const nodeConfigSchema = z.object({
    */
   backends: z.array(z.object({
     id: z.string().min(1),
-    modality: z.enum(['chat', 'transcription', 'image']),
+    modality: z.enum(['chat', 'transcription', 'image', 'decision']),
     upstream: url,
     models: z.array(z.string().min(1)).min(1, 'a backend that serves no model cannot be routed to'),
     concurrency: positive.optional(),
