@@ -1007,6 +1007,8 @@ export interface TeachConfig {
     python?: string;
     /** Working dir for local mode; if unset, the node's `runtime.repo`. */
     cwd?: string;
+    /** Model weights/tokenizer directory for local mode; unset keeps the trainer's own default. */
+    modelDir?: string;
     /**
      * The two knobs that decide peak GPU memory. Unset, both are derived from the question count — and both
      * derivations give the LARGEST value to the LARGEST lesson, which is backwards: they raise the pressure

@@ -17,6 +17,20 @@ import {
 
 const tmp = mkdtempSync(join(tmpdir(), 'ngram-config-test-'));
 
+test('local trainer model directory is a validated optional config value', () => {
+  const field = configField('teach.trainer.modelDir');
+  assert.ok(field);
+  assert.equal(field.parse('/models/own-model'), '/models/own-model');
+  for (const invalid of ['', 42, null]) assert.equal(field.safeParse(invalid).success, false);
+  const cfg = defaultConfig({ home: join(tmp, 'native-trainer') });
+  cfg.teach = teachConfig(cfg);
+  cfg.teach.trainer.runtime = 'local';
+  cfg.teach.trainer.modelDir = '/models/own-model';
+  assert.equal(teachConfig(cfg).trainer.modelDir, '/models/own-model');
+  assert.deepEqual(validateConfig(cfg), []);
+  assert.equal(teachConfig({ teach: undefined }).trainer.modelDir, undefined);
+});
+
 test('embedding and speech backends can be declared and unknown modalities are refused', () => {
   const field = configField('backends');
   assert.ok(field);

@@ -60,6 +60,8 @@ const teachSchema = z.object({
     runtime: z.enum(['docker', 'local']).optional(),
     python: z.string().optional(),
     cwd: z.string().optional(),
+    /** Local model weights/tokenizer directory; passed as --model-dir without changing the node process environment. */
+    modelDir: z.string().min(1).optional(),
     /**
      * The two knobs that decide peak GPU memory. Unset, each is derived from the question count — and both
      * derivations give the LARGEST value to the LARGEST lesson, which is backwards: memory scales with these,
