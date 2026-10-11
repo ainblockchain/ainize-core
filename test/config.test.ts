@@ -17,6 +17,15 @@ import {
 
 const tmp = mkdtempSync(join(tmpdir(), 'ngram-config-test-'));
 
+test('embedding and speech backends can be declared and unknown modalities are refused', () => {
+  const field = configField('backends');
+  assert.ok(field);
+  for (const modality of ['embedding', 'speech']) {
+    assert.equal(field.safeParse([{ id: modality, modality, upstream: 'http://127.0.0.1:9000', models: ['fixture'], concurrency: 1 }]).success, true);
+  }
+  assert.equal(field.safeParse([{ id: 'invalid', modality: 'unknown', upstream: 'http://127.0.0.1:9000', models: ['fixture'] }]).success, false);
+});
+
 test('active teach jobs per key keeps the default and allows an explicit parallel workload', () => {
   assert.equal(teachConfig({ teach: undefined }).activeJobsPerKey, 2);
   const field = configField('teach.activeJobsPerKey');
