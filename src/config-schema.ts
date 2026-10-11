@@ -182,7 +182,7 @@ export const nodeConfigSchema = z.object({
    */
   backends: z.array(z.object({
     id: z.string().min(1),
-    modality: z.enum(['chat', 'transcription', 'image', 'decision']),
+    modality: z.enum(['chat', 'transcription', 'image', 'decision', 'embedding', 'speech']),
     upstream: url,
     models: z.array(z.string().min(1)).min(1, 'a backend that serves no model cannot be routed to'),
     concurrency: positive.optional(),
